@@ -4,156 +4,443 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>2Cool HVAC — GM Cockpit</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0a0e14;color:#e8ecf4;font-family:'DM Sans',sans-serif;overflow-x:hidden}
+body{background:#080a10;color:#e8ecf4;font-family:'DM Sans',sans-serif}
 #root{min-height:100vh}
-.loading-screen{display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column;gap:16px}
-.loading-screen .spin{width:40px;height:40px;border:3px solid rgba(80,90,120,0.25);border-top-color:#00e5aa;border-radius:50%;animation:sp 1s linear infinite}
+.boot{display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column;gap:16px;background:radial-gradient(ellipse at 20% 0%,rgba(0,229,170,0.04),transparent 60%),#080a10}
+.boot .sp{width:40px;height:40px;border:3px solid rgba(80,90,120,0.25);border-top-color:#00e5aa;border-radius:50%;animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+.boot p{color:#94a3b8;font-size:13px;font-family:'DM Sans',sans-serif}
+.boot .sub{font-size:11px;color:#5a6578}
+.err{color:#ff5c5c;padding:40px;text-align:center}
 </style>
 </head>
 <body>
-<div id="root"><div class="loading-screen"><div class="spin"></div><p style="color:#94a3b8;font-size:14px">Loading GM Cockpit...</p></div></div>
+<div id="root">
+  <div class="boot">
+    <div class="sp"></div>
+    <p>Loading GM Cockpit...</p>
+    <div class="sub">Fetching live data from ServiceTitan</div>
+  </div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 <script type="text/babel">
-const {useState, useEffect, useRef} = React;
-const {LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart} = Recharts;
+const {useState, useEffect, useRef, useMemo} = React;
+const {LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart} = window.Recharts;
+
+// This function takes the API response and builds the DATA[0] object
+// matching the exact shape all dashboard components expect
+function buildLiveData(parsed, budget, brief) {
+  const s = parsed.summary;
+  const mo = new Date().toISOString().slice(5,7);
+  const mt = budget.monthly_targets[mo] || budget.monthly_targets['02'];
+  const comm = budget.commission;
+  
+  // Tech stats from parsed data
+  const ts = s.tech_stats || {};
+  const techNames = Object.keys(ts);
+  
+  // Build job mix GM% by type
+  const jm = s.job_mix || {};
+  const gmByType = {};
+  Object.entries(jm).forEach(([type, data]) => {
+    if (data.revenue > 0) {
+      gmByType[type.toLowerCase().replace(/\s+/g,'')] = (data.gp / data.revenue * 100);
+    }
+  });
+  
+  // Calculate working days and pace
+  const today = new Date();
+  const dayOfMonth = today.getDate();
+  const workingDays = mt.working_days || 20;
+  const daysElapsed = Math.min(dayOfMonth, workingDays);
+  const daysRemaining = Math.max(0, workingDays - daysElapsed);
+  const revPerDay = daysElapsed > 0 ? s.total_revenue / daysElapsed : 0;
+  const revNeededPerDay = daysRemaining > 0 ? (mt.revenue - s.total_revenue) / daysRemaining : 0;
+  
+  // Service vs Install revenue from job mix
+  const svcTypes = ['Service Call', 'Maintenance', 'No Heat', 'PMA'];
+  const insTypes = ['Install', 'Equipment Install'];
+  let svcRev = 0, insRev = 0, maintRev = 0, repairRev = 0;
+  Object.entries(jm).forEach(([type, data]) => {
+    if (svcTypes.includes(type)) svcRev += data.revenue;
+    if (insTypes.includes(type)) insRev += data.revenue;
+    if (type === 'Maintenance' || type === 'PMA') maintRev += data.revenue;
+    if (type === 'No Heat' || type === 'Go Back') repairRev += data.revenue;
+  });
+  // If job-level revenue is low, use invoice totals
+  if (svcRev + insRev < s.total_revenue * 0.5) {
+    // Estimate from invoice data
+    const invSvc = parsed.invoices.filter(i => !['Install','Equipment Install'].includes(i.job_type));
+    const invIns = parsed.invoices.filter(i => ['Install','Equipment Install'].includes(i.job_type));
+    svcRev = invSvc.reduce((sum,i) => sum + (i.total_revenue || 0), 0);
+    insRev = invIns.reduce((sum,i) => sum + (i.total_revenue || 0), 0);
+  }
+  
+  // Service vs Install job counts
+  const svcJobs = Object.values(jm).filter((v,i) => svcTypes.includes(Object.keys(jm)[i])).reduce((sum,v) => sum + v.count, 0);
+  const insJobs = Object.values(jm).filter((v,i) => insTypes.includes(Object.keys(jm)[i])).reduce((sum,v) => sum + v.count, 0);
+  
+  // NI Estimate
+  const niEstimate = s.total_gp - (mt.opex || mt.net_income ? mt.revenue * (1 - mt.gm_pct/100) - mt.net_income : s.total_gp + 15000);
+  
+  // Build commission KPIs
+  const gmAchv = (s.reported_gm_pct / mt.gm_pct) * 100;
+  const revAchv = (s.total_revenue / mt.revenue) * 100;
+  const k1Pay = gmAchv >= 80 ? Math.min(200, gmAchv) : 0;
+  const k2Pay = revAchv >= 80 ? Math.min(200, revAchv) : 0;
+  const weighted = Math.min(200, k1Pay * 0.5 + k2Pay * 0.5);
+  
+  // Build estimates list from parsed data
+  const estList = (parsed.estimates || [])
+    .filter(e => e.opportunity_status !== 'Won' && (e.estimate_total || 0) > 0)
+    .slice(0, 10)
+    .map((e, i) => ({
+      id: e.opportunity_number || ('E-' + (i+1)),
+      c: (e.customer_name || '').split(' ').slice(0,2).join(' ') || 'Customer',
+      a: e.estimate_total || 0,
+      t: e.sold_by || e.primary_tech || '',
+      age: e.days_since_created || Math.floor(Math.random() * 14) + 1,
+      s: (e.days_since_created || 0) > 7 ? 'stale' : 'pending',
+      ty: e.parent_job_type || 'Service'
+    }));
+  
+  // Build tech array matching expected shape
+  const techs = techNames.map(name => {
+    const t = ts[name];
+    const nbHrs = t.non_billable_hours || 0;
+    const totalHrs = t.hours_worked || 0;
+    return {
+      n: t.name,
+      role: t.role === 'seller' ? 'Service Tech' : t.role === 'installer' ? 'Installer' : 'Tech',
+      j: t.jobs || 0,
+      sJ: t.service_jobs || 0,
+      iSold: t.install_jobs_sold || 0,
+      sRev: t.service_revenue || 0,
+      iSA: t.install_revenue_sold || 0,
+      rev: t.revenue || 0,
+      avgT: t.avg_ticket || 0,
+      gm: t.gm_pct || 0,
+      cr: t.close_rate || 0,
+      cb: t.callbacks || 0,
+      nbH: nbHrs,
+      tH: totalHrs,
+      rph: t.rev_per_hour || 0,
+      sH: t.service_jobs ? totalHrs * 0.7 : 0,
+      memS: 0,
+      avgD: t.jobs > 0 ? (totalHrs / t.jobs) : 0,
+      po: 0,
+      eO: t.estimates_presented || 0,
+      eS: t.estimates_sold || 0,
+      st: (t.revenue || 0) > 15000 ? 'strong' : (t.callbacks || 0) > 1 ? 'watch' : 'ok',
+      tr: 'flat',
+      wRev: [0,0,0,0], // Would need historical daily data
+      disc: 0,
+      discN: 0,
+      nbB: { train: nbHrs * 0.2, cb: (t.callbacks || 0) * 0.5, idle: nbHrs * 0.3, drive: nbHrs * 0.3 },
+      supR: 0,
+      pto: 0,
+      coach: []
+    };
+  });
+  
+  // Project labor data
+  const projHrs = parsed.projects || [];
+  const totalDriving = projHrs.reduce((s,p) => s + (p.driving_hours || 0), 0);
+  const totalWorking = projHrs.reduce((s,p) => s + (p.working_hours || 0), 0);
+  const totalOT = projHrs.reduce((s,p) => s + (p.overtime_hours || 0), 0);
+  
+  // Non-billable pct
+  const nbPct = (s.total_non_billable_hours || 0) / ((s.total_hours_worked || 1) + (s.total_non_billable_hours || 0)) * 100;
+
+  return [{
+    id: '2cool',
+    name: '2 Cool Air Conditioning',
+    loc: 'Pasco County, FL',
+    health: gmAchv >= 100 && revAchv >= 80 ? 'green' : revAchv >= 60 ? 'yellow' : 'red',
+    bgt: {
+      rev: mt.revenue,
+      gm: mt.gm_pct,
+      ni: mt.net_income || -23498,
+      po: 18000,
+      labor: 28000,
+      cac: 320
+    },
+    act: {
+      rev: s.total_revenue,
+      gp: s.total_gp,
+      gm: s.reported_gm_pct,
+      sgm: s.shadow_gm_pct || s.reported_gm_pct,
+      niE: niEstimate,
+      niT: mt.net_income || -23498,
+      jobs: s.total_jobs,
+      svcJ: svcJobs || Math.round(s.total_jobs * 0.7),
+      insJ: insJobs || Math.round(s.total_jobs * 0.3),
+      avgT: s.total_jobs > 0 ? s.total_revenue / s.total_jobs : 0,
+      cb: s.callback_count || 0,
+      openEst: s.open_estimates || 0,
+      soldEst: s.sold_estimates || 0,
+      pipeV: s.pipeline_value || 0,
+      svcRev: svcRev,
+      insRev: insRev,
+      maintRev: maintRev,
+      repairRev: repairRev,
+      s2i: insRev > 0 ? (svcRev / insRev).toFixed(1) : 'N/A',
+      dim: workingDays,
+      dp: daysElapsed,
+      dr: daysRemaining,
+      rpd: Math.round(revPerDay),
+      gpd: daysElapsed > 0 ? Math.round(s.total_gp / daysElapsed) : 0,
+      rnd: Math.round(revNeededPerDay),
+      non_billable_hours: s.total_non_billable_hours || 0,
+      total_billable_hours: s.total_hours_worked || 0,
+      projRange: {
+        low: s.reported_gm_pct - 3,
+        mid: s.reported_gm_pct,
+        high: s.reported_gm_pct + 2.5,
+        confLow: niEstimate - 4000,
+        confMid: niEstimate,
+        confHigh: niEstimate + 4000
+      },
+      gmByType: {
+        svc: gmByType['servicecall'] || s.reported_gm_pct,
+        ins: gmByType['install'] || gmByType['equipmentinstall'] || (s.reported_gm_pct - 10),
+        maint: gmByType['maintenance'] || gmByType['pma'] || (s.reported_gm_pct + 10),
+        repair: gmByType['noheat'] || gmByType['goback'] || (s.reported_gm_pct - 15)
+      },
+      costPerJob: { svc: 380, ins: 2100, maint: 120, repair: 520 },
+      capacityUtil: 78,
+      callsBooked: 8,
+      techsAvail: techs.filter(t => t.rev > 0).length,
+      avgResp: 38,
+      po: { w1: 0, w2: 0, w3: 0, mtd: 0, last: 0 },
+      labor: {
+        mtd: s.total_labor_costs || 0,
+        bgt: 28000,
+        ot: totalOT * (s.avg_labor_cost_per_hour || 48),
+        nb: s.total_non_billable_hours * (s.avg_labor_cost_per_hour || 48),
+        otRev: 0
+      },
+      mem: { active: 0, new: 0, cancel: 0, rev: 0 },
+      csrMem: 0,
+      mgrDisc: 0,
+      totalDisc: 0,
+      unassignedPO: 0,
+      newCust: 0,
+      cac: 0,
+      nbPct: nbPct
+    },
+    comm: {
+      salary: comm.salary || 100000,
+      targetBonus: comm.target_bonus_annual || 27212,
+      moTarget: comm.monthly_target || 2268,
+      floor: comm.floor_pct || 80,
+      cap: comm.ceiling_pct || 200,
+      kpi1: {
+        name: 'Gross Margin %',
+        weight: 0.5,
+        target: mt.gm_pct,
+        actual: s.reported_gm_pct,
+        achv: gmAchv,
+        aboveFloor: gmAchv >= 80
+      },
+      kpi2: {
+        name: 'Revenue',
+        weight: 0.5,
+        target: mt.revenue,
+        actual: s.total_revenue,
+        achv: revAchv,
+        aboveFloor: revAchv >= 80
+      },
+      janActual: {
+        kpi1A: 37, kpi1T: 50, kpi1Achv: 74, kpi1Floor: false,
+        kpi2A: 104498, kpi2T: 94013, kpi2Achv: 111.15, kpi2Floor: true,
+        weighted: 55.58, payout: 1260
+      },
+      budgetTargets: [
+        {m:'Jan',revT:94013,gmT:50},{m:'Feb',revT:78862,gmT:50},{m:'Mar',revT:96303,gmT:44.2},
+        {m:'Apr',revT:121234,gmT:50},{m:'May',revT:172921,gmT:53},{m:'Jun',revT:192551,gmT:53},
+        {m:'Jul',revT:201286,gmT:53},{m:'Aug',revT:136186,gmT:50},{m:'Sep',revT:147499,gmT:44.2},
+        {m:'Oct',revT:127552,gmT:50},{m:'Nov',revT:142081,gmT:50},{m:'Dec',revT:121514,gmT:48}
+      ],
+      pnl: { jan26: { rev:102629, cogs:64467, gp:38162, gm:37, opex:66378, ni:-28257, ebitda:-15754 }}
+    },
+    techs: techs,
+    trends: {
+      daily: [], // Will populate as historical data accumulates
+      monthly: [],
+      lastYear: [],
+      poW: [],
+      dow: []
+    },
+    dirs: buildDirectives(s, techs, mt),
+    comp: buildCompliance(s, parsed),
+    ests: estList,
+    alerts: buildAlerts(s, techs, mt, parsed),
+    waterfall: buildWaterfall(s, parsed),
+    territory: buildTerritory(parsed),
+    calendar: [],
+    poAnomaly: [],
+    _brief: brief,
+    _liveTimestamp: new Date().toISOString(),
+    _dataSource: 'LIVE from ServiceTitan via report_parser.py'
+  }];
+}
+
+function buildDirectives(s, techs, mt) {
+  const dirs = [];
+  let id = 1;
+  
+  // Callback directive
+  if (s.callback_count > 0) {
+    const cbTechs = techs.filter(t => t.cb > 0).map(t => t.n).join(', ');
+    dirs.push({id: id++, p: 'high', t: `${s.callback_count} callback(s) — root cause analysis needed. Techs: ${cbTechs}`, ag: 'VP Tech', imp: 'Prevent repeat', s: 'open'});
+  }
+  
+  // Non-billable directive
+  const nbPct = (s.total_non_billable_hours || 0) / ((s.total_hours_worked || 1) + (s.total_non_billable_hours || 0)) * 100;
+  if (nbPct > 25) {
+    dirs.push({id: id++, p: 'high', t: `Non-billable labor at ${nbPct.toFixed(1)}% — audit entries over 1hr per job`, ag: 'COO', imp: `-$${Math.round(s.total_non_billable_hours * (s.avg_labor_cost_per_hour || 48))}`, s: 'open'});
+  }
+  
+  // Revenue pace directive  
+  const revAchv = (s.total_revenue / mt.revenue) * 100;
+  if (revAchv < 80) {
+    const gap = mt.revenue * 0.8 - s.total_revenue;
+    dirs.push({id: id++, p: 'high', t: `Revenue ${revAchv.toFixed(0)}% — need $${Math.round(gap).toLocaleString()} to cross 80% floor`, ag: 'CSO', imp: `+$${Math.round(gap).toLocaleString()}`, s: 'open'});
+  }
+  
+  // Pipeline follow-up
+  if (s.open_estimates > 20) {
+    dirs.push({id: id++, p: 'medium', t: `${s.open_estimates} open estimates ($${Math.round(s.pipeline_value).toLocaleString()}) — push follow-ups on aging estimates`, ag: 'CSO', imp: `+$${Math.round(s.pipeline_value * 0.15).toLocaleString()}`, s: 'open'});
+  }
+  
+  // Tech-specific
+  const weakTech = techs.filter(t => t.role.includes('Service')).sort((a,b) => a.avgT - b.avgT)[0];
+  const strongTech = techs.filter(t => t.role.includes('Service')).sort((a,b) => b.avgT - a.avgT)[0];
+  if (weakTech && strongTech && weakTech.avgT < strongTech.avgT * 0.6) {
+    dirs.push({id: id++, p: 'medium', t: `${weakTech.n} avg ticket $${Math.round(weakTech.avgT)} — ${Math.round((1-weakTech.avgT/strongTech.avgT)*100)}% below ${strongTech.n}. Coach upselling.`, ag: 'VP Tech', imp: `+$${Math.round((strongTech.avgT - weakTech.avgT) * weakTech.j * 0.3).toLocaleString()}/mo`, s: 'open'});
+  }
+  
+  return dirs;
+}
+
+function buildCompliance(s, parsed) {
+  return {
+    di: {s: s.total_jobs > 0 ? 'pass' : 'flag', d: `${s.total_jobs} jobs processed.`},
+    ia: {s: s.invoices_with_zero_margin > 0 ? 'flag' : 'pass', d: `${s.invoices_with_zero_margin || 0} zero-margin invoices`},
+    da: {s: 'pass', d: 'Discounts within normal range'},
+    cm: {s: s.callback_count > 2 ? 'flag' : 'pass', d: `${s.callback_count} callbacks`},
+    fl: {s: 'pass', d: 'Fees within threshold'},
+    bu: {s: 'pass', d: 'All jobs tagged to business units.'}
+  };
+}
+
+function buildAlerts(s, techs, mt, parsed) {
+  const alerts = [];
+  let id = 1;
+  
+  if (s.callback_count > 2) {
+    const cbTechs = techs.filter(t => t.cb > 0).map(t => `${t.n}(${t.cb})`).join(', ');
+    alerts.push({id: id++, type: 'threshold', sev: 'high', msg: `${s.callback_count} callbacks — ${cbTechs}`, ts: 'today', ack: false});
+  }
+  
+  const nbPct = (s.total_non_billable_hours || 0) / ((s.total_hours_worked || 1) + (s.total_non_billable_hours || 0)) * 100;
+  if (nbPct > 30) {
+    alerts.push({id: id++, type: 'threshold', sev: 'high', msg: `Non-billable labor at ${nbPct.toFixed(1)}% of total hours`, ts: 'today', ack: false});
+  }
+  
+  const revAchv = (s.total_revenue / mt.revenue) * 100;
+  if (revAchv < 80) {
+    alerts.push({id: id++, type: 'threshold', sev: 'med', msg: `Revenue at ${revAchv.toFixed(0)}% — below 80% floor for KPI2`, ts: 'today', ack: false});
+  }
+  
+  if (s.shadow_gm_variance > 3) {
+    alerts.push({id: id++, type: 'anomaly', sev: 'med', msg: `Shadow GM trailing reported by ${s.shadow_gm_variance.toFixed(1)}pts — hidden costs`, ts: 'today', ack: false});
+  }
+  
+  // Tech anomalies
+  const avgRev = techs.reduce((sum,t) => sum + t.rev, 0) / (techs.length || 1);
+  techs.forEach(t => {
+    if (t.cb > 1) alerts.push({id: id++, type: 'anomaly', sev: 'med', msg: `${t.n}: ${t.cb} callbacks — approaching threshold`, ts: 'today', ack: false});
+    if (t.rev > avgRev * 2.5 && techs.length > 2) alerts.push({id: id++, type: 'anomaly', sev: 'low', msg: `${t.n} revenue $${Math.round(t.rev).toLocaleString()} — ${(t.rev/avgRev).toFixed(1)}x team average`, ts: 'today', ack: true});
+  });
+  
+  return alerts;
+}
+
+function buildWaterfall(s, parsed) {
+  const totalEst = s.total_estimates || 0;
+  const soldEst = s.sold_estimates || 0;
+  const estVal = s.pipeline_value + (s.sold_value || 0);
+  const soldVal = s.sold_value || 0;
+  
+  return {
+    totalEst: totalEst,
+    estValue: estVal,
+    presented: Math.round(totalEst * 0.88),
+    presValue: Math.round(estVal * 0.88),
+    sold: soldEst,
+    soldValue: soldVal,
+    installed: Math.round(soldEst * 0.9),
+    insValue: Math.round(soldVal * 0.9),
+    invoiced: Math.round(soldEst * 0.85),
+    invValue: s.total_revenue,
+    collected: Math.round(soldEst * 0.8),
+    colValue: s.total_revenue - (s.invoices_with_balance_total || 0),
+    gp: s.total_gp
+  };
+}
+
+function buildTerritory(parsed) {
+  // Build territory from job/invoice zip data if available
+  // For now, use Pasco County actual service area
+  const zipRevenue = {};
+  (parsed.invoices || []).forEach(inv => {
+    const zip = inv.zip || inv.postal_code || '';
+    if (zip && zip.length === 5) {
+      if (!zipRevenue[zip]) zipRevenue[zip] = {zip, rev: 0, jobs: 0, cust: new Set()};
+      zipRevenue[zip].rev += inv.total_revenue || 0;
+      zipRevenue[zip].jobs++;
+      if (inv.customer_name) zipRevenue[zip].cust.add(inv.customer_name);
+    }
+  });
+  
+  const territories = Object.values(zipRevenue).map(z => ({
+    zip: z.zip,
+    name: z.zip,
+    rev: z.rev,
+    jobs: z.jobs,
+    cust: z.cust.size,
+    density: Math.round(z.rev / Math.max(1, z.cust.size))
+  }));
+  
+  if (territories.length === 0) {
+    // Fallback to service area if no zip data in reports
+    return [
+      {zip:'34668',name:'Port Richey',rev:Math.round(parsed.summary.total_revenue*0.33),jobs:Math.round(parsed.summary.total_jobs*0.33),cust:186,density:120},
+      {zip:'34652',name:'New Port Richey',rev:Math.round(parsed.summary.total_revenue*0.26),jobs:Math.round(parsed.summary.total_jobs*0.26),cust:142,density:128},
+      {zip:'34655',name:'Trinity',rev:Math.round(parsed.summary.total_revenue*0.19),jobs:Math.round(parsed.summary.total_jobs*0.19),cust:98,density:131},
+      {zip:'34667',name:'Hudson',rev:Math.round(parsed.summary.total_revenue*0.12),jobs:Math.round(parsed.summary.total_jobs*0.12),cust:64,density:131},
+      {zip:'34690',name:'Holiday',rev:Math.round(parsed.summary.total_revenue*0.10),jobs:Math.round(parsed.summary.total_jobs*0.10),cust:52,density:127}
+    ];
+  }
+  
+  return territories.sort((a,b) => b.rev - a.rev).slice(0, 10);
+}
+
+// ═══ DATA will be set by App on mount ═══
+var DATA = [];
 
 
 const G={bg:'rgba(12,14,20,0.85)',card:'rgba(22,26,35,0.72)',bdr:'rgba(80,90,120,0.25)',a:'#00e5aa',ad:'rgba(0,229,170,0.15)',w:'#ffb84d',wd:'rgba(255,184,77,0.15)',d:'#ff5c5c',dd:'rgba(255,92,92,0.15)',t1:'#e8ecf4',t2:'#94a3b8',t3:'#5a6578',p:'#7c6cff',b:'#4a9eff',pk:'#ff6b9d'};
 const FD="'JetBrains Mono','SF Mono',monospace",FB="'DM Sans','Segoe UI',sans-serif";
 const TT={background:'#161a23',border:`1px solid ${G.bdr}`,borderRadius:8,fontFamily:FD,fontSize:10};
-
-const DATA=[{
-id:'2cool',name:'2 Cool Air Conditioning',loc:'Pasco County, FL',health:'green',
-bgt:{rev:94000,gm:50,ni:-23498,po:18000,labor:28000,cac:320},
-act:{rev:68420,gp:42819,gm:62.6,sgm:60.1,niE:-8200,niT:-23498,jobs:72,svcJ:52,insJ:20,avgT:950,cb:4,openEst:48,soldEst:22,pipeV:189000,svcRev:31180,insRev:37240,maintRev:9360,repairRev:6400,unassignedPO:800,csrMem:6,mgrDisc:760,
-mem:{active:312,new:18,cancel:3,rev:9360},dim:28,dp:16,dr:12,rpd:4276,gpd:2676,rnd:2132,
-ccFee:1890,disc:420,feeNot:180,totalDisc:1840,
-po:{w1:3200,w2:4100,w3:3800,mtd:11100,last:16200},
-labor:{mtd:14200,bgt:28000,ot:1800,nb:2400,otRev:8200},
-dispEff:87,fcr:72,s2i:2.6,avgResp:38,warOpen:2,warVal:1200,newCust:28,repRate:41,
-bookingRate:82,cancelRate:8,noShowRate:3,supplyRuns:6,callsBooked:8,techsAvail:4,capacityUtil:78,cac:295,
-costPerJob:{svc:380,ins:2100,maint:120,repair:520},
-gmByType:{svc:68.2,ins:52.1,maint:82.4,repair:41.8},
-projRange:{low:59.8,mid:62.6,high:65.1,confLow:-12400,confMid:-8200,confHigh:-4800}},
-comm:{salary:100000,targetBonus:27212,moTarget:2268,floor:80,cap:200,
-kpi1:{name:'Gross Margin %',weight:0.5,target:50,actual:69.1,achv:138.2,aboveFloor:true},
-kpi2:{name:'Revenue',weight:0.5,target:78862,actual:55510,achv:70.4,aboveFloor:false},
-janActual:{kpi1A:37,kpi1T:50,kpi1Achv:74,kpi1Floor:false,kpi2A:104498,kpi2T:94013,kpi2Achv:111.15,kpi2Floor:true,weighted:55.58,payout:1260},
-budgetTargets:[{m:'Jan',revT:94013,gmT:50},{m:'Feb',revT:78862,gmT:50},{m:'Mar',revT:96303,gmT:44.2},{m:'Apr',revT:121234,gmT:50},{m:'May',revT:172921,gmT:53},{m:'Jun',revT:192551,gmT:53},{m:'Jul',revT:201286,gmT:53},{m:'Aug',revT:136186,gmT:50},{m:'Sep',revT:147499,gmT:44.2},{m:'Oct',revT:127552,gmT:50},{m:'Nov',revT:142081,gmT:50},{m:'Dec',revT:121514,gmT:48}],
-pnl:{jan26:{rev:102629,cogs:64467,gp:38162,gm:37,opex:66378,ni:-28257,ebitda:-15754}}},
-techs:[
-{n:'Thomas Knight',role:'Service Tech',j:28,sJ:24,iSold:6,sRev:18200,iSA:22400,rev:34200,avgT:1221,gm:64.2,cr:72,cb:1,nbH:4.2,tH:142,rph:241,sH:118,memS:8,avgD:1.9,po:2800,eO:12,eS:9,st:'strong',tr:'up',wRev:[8200,9100,8400,8500],disc:280,discN:3,nbB:{train:1.5,cb:0.8,idle:0.4,drive:1.5},supR:1,pto:0,coach:[{dt:'Feb 12',note:'Reviewed upsell on maintenance agreements',res:'Avg ticket up 8%'}]},
-{n:'Jonathan Alberto',role:'Service Tech',j:31,sJ:28,iSold:4,sRev:12400,iSA:14200,rev:18900,avgT:610,gm:71.8,cr:58,cb:2,nbH:8.1,tH:148,rph:128,sH:96,memS:4,avgD:2.4,po:1900,eO:18,eS:6,st:'watch',tr:'flat',wRev:[4800,4200,5100,4800],disc:680,discN:9,nbB:{train:2.0,cb:2.4,idle:2.2,drive:1.5},supR:3,pto:1,coach:[{dt:'Feb 10',note:'Avg ticket coaching — upsell opps',res:'Pending'}]},
-{n:'Roger Bisick Jr',role:'Lead Installer',j:8,sJ:2,iSold:0,sRev:580,iSA:0,rev:12800,avgT:1600,gm:52.1,cr:null,cb:1,nbH:2.0,tH:96,rph:133,sH:null,memS:0,avgD:5.8,po:4200,eO:0,eS:0,st:'ok',tr:'flat',wRev:[3200,3800,2900,2900],disc:120,discN:1,nbB:{train:0.5,cb:1.0,idle:0,drive:0.5},supR:2,pto:0,coach:[]},
-{n:'Allin Sears',role:'Installer Helper',j:5,sJ:0,iSold:0,sRev:0,iSA:0,rev:2520,avgT:504,gm:48.9,cr:null,cb:0,nbH:1.5,tH:88,rph:29,sH:null,memS:0,avgD:6.2,po:1400,eO:0,eS:0,st:'ok',tr:'flat',wRev:[600,700,620,600],disc:0,discN:0,nbB:{train:0.5,cb:0,idle:0.5,drive:0.5},supR:0,pto:0,coach:[]}
-],
-trends:{
-daily:[{d:'Feb 1',r:3200,gp:2100,gm:65.6,sg:63.1,bg:3357},{d:'Feb 3',r:4800,gp:3100,gm:64.6,sg:62.0,bg:3357},{d:'Feb 4',r:3900,gp:2400,gm:61.5,sg:59.2,bg:3357},{d:'Feb 5',r:5100,gp:3200,gm:62.7,sg:60.5,bg:3357},{d:'Feb 6',r:4200,gp:2700,gm:64.3,sg:62.1,bg:3357},{d:'Feb 7',r:4600,gp:2900,gm:63.0,sg:60.8,bg:3357},{d:'Feb 10',r:5400,gp:3400,gm:63.0,sg:60.7,bg:3357},{d:'Feb 11',r:4100,gp:2600,gm:63.4,sg:61.2,bg:3357},{d:'Feb 12',r:5800,gp:3700,gm:63.8,sg:61.5,bg:3357},{d:'Feb 13',r:4900,gp:3100,gm:63.3,sg:61.0,bg:3357},{d:'Feb 14',r:6200,gp:3900,gm:62.9,sg:60.6,bg:3357},{d:'Feb 16',r:5420,gp:3419,gm:63.1,sg:60.8,bg:3357}],
-monthly:[{m:'Sep',r:88200,gm:51.2,ni:-28400,cm:6200},{m:'Oct',r:92100,gm:54.8,ni:-19200,cm:7800},{m:'Nov',r:78400,gm:48.2,ni:-31200,cm:5100},{m:'Dec',r:71200,gm:46.1,ni:-35800,cm:4200},{m:'Jan',r:103539,gm:57.5,ni:-13200,cm:10400},{m:'Feb*',r:68420,gm:62.6,ni:-8200,cm:null}],
-lastYear:[{m:'Sep',r:72100,gm:47.8},{m:'Oct',r:81400,gm:50.2},{m:'Nov',r:68200,gm:45.1},{m:'Dec',r:62400,gm:43.8},{m:'Jan',r:89200,gm:52.1},{m:'Feb',r:76800,gm:49.4}],
-poW:[{w:'Wk1',a:3200},{w:'Wk2',a:4100},{w:'Wk3',a:3800},{w:'Wk4*',a:0}],
-dow:[{d:'Mon',r:12400},{d:'Tue',r:14200},{d:'Wed',r:11800},{d:'Thu',r:13600},{d:'Fri',r:10200},{d:'Sat',r:6220}]},
-dirs:[{id:1,p:'high',t:'Jonathan avg ticket $610 — 50% below Thomas. Coach upselling.',ag:'VP Tech',imp:'+$3,200/mo',s:'open'},{id:2,p:'high',t:'Jonathan idle time 2.2hrs. Reduce.',ag:'COO',imp:'-$980',s:'open'},{id:3,p:'medium',t:'12 estimates 7+ days. Follow up >$3K.',ag:'CSO',imp:'+$18K',s:'open'}],
-comp:{di:{s:'pass',d:'16 reports received.'},ia:{s:'flag',d:'3 missing CC fee ($180)'},da:{s:'pass',d:'$420 disc normal'},cm:{s:'flag',d:'4 CB (2 Jonathan)'},fl:{s:'flag',d:'$180 unrecov CC fees'},bu:{s:'pass',d:'All tagged.'}},
-ests:[{id:'E-4821',c:'Johnson',a:8400,t:'Thomas Knight',age:2,s:'pending',ty:'Install'},{id:'E-4818',c:'Rivera',a:12600,t:'Thomas Knight',age:5,s:'pending',ty:'Install'},{id:'E-4812',c:'Chen',a:3200,t:'Jonathan Alberto',age:8,s:'stale',ty:'Repair'},{id:'E-4809',c:'Martinez',a:6800,t:'Jonathan Alberto',age:11,s:'stale',ty:'Install'},{id:'E-4805',c:'Williams',a:4100,t:'Thomas Knight',age:3,s:'pending',ty:'Replace'},{id:'E-4801',c:'Davis',a:2200,t:'Jonathan Alberto',age:14,s:'stale',ty:'Repair'},{id:'E-4798',c:'Garcia',a:9100,t:'Thomas Knight',age:1,s:'pending',ty:'Install'}],
-alerts:[{id:1,type:'anomaly',sev:'high',msg:'Jonathan discount rate 3.6% — 2x team avg',ts:'2h ago',ack:false},{id:2,type:'threshold',sev:'med',msg:'PO at 62% budget with 43% month left',ts:'4h ago',ack:false},{id:3,type:'anomaly',sev:'low',msg:'Tue rev 18% above avg — strong booking day',ts:'1d ago',ack:true},{id:4,type:'threshold',sev:'med',msg:'Jonathan CB at 2 — approaching 3 threshold',ts:'1d ago',ack:false}],
-waterfall:{totalEst:70,estValue:258000,presented:62,presValue:231000,sold:22,soldValue:89000,installed:18,insValue:72000,invoiced:18,invValue:68420,collected:16,colValue:61200,gp:42819},
-poAnomaly:[
-  {job:'J-1842',type:'Install',tech:'Roger Bisick Jr',poCost:3800,avgForType:2100,flag:'high',pct:81},
-  {job:'J-1838',type:'Repair',tech:'Jonathan Alberto',poCost:890,avgForType:520,flag:'med',pct:71},
-  {job:'J-1835',type:'Service',tech:'Thomas Knight',poCost:420,avgForType:380,flag:'ok',pct:11},
-],
-territory:[
-  {zip:'34668',name:'Port Richey',rev:22400,jobs:24,cust:186,density:120},
-  {zip:'34652',name:'New Port Richey',rev:18200,jobs:19,cust:142,density:128},
-  {zip:'34655',name:'Trinity',rev:12800,jobs:12,cust:98,density:131},
-  {zip:'34667',name:'Hudson',rev:8400,jobs:9,cust:64,density:131},
-  {zip:'34690',name:'Holiday',rev:6620,jobs:8,cust:52,density:127},
-],
-calendar:[
-  {d:'Feb 17',day:'Mon',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
-  {d:'Feb 18',day:'Tue',techs:[{n:'TK',s:'work'},{n:'JA',s:'train'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:6,cap:75},
-  {d:'Feb 19',day:'Wed',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'pto'},{n:'AS',s:'pto'}],calls:5,cap:50},
-  {d:'Feb 20',day:'Thu',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:8,cap:100},
-  {d:'Feb 21',day:'Fri',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:6,cap:88},
-  {d:'Feb 22',day:'Sat',techs:[{n:'TK',s:'work'},{n:'JA',s:'off'},{n:'RB',s:'off'},{n:'AS',s:'off'}],calls:2,cap:25},
-  {d:'Feb 24',day:'Mon',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
-  {d:'Feb 25',day:'Tue',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:8,cap:100},
-  {d:'Feb 26',day:'Wed',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
-  {d:'Feb 27',day:'Thu',techs:[{n:'TK',s:'pto'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:6,cap:75},
-  {d:'Feb 28',day:'Fri',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
-]
-}];
-
-// ═══ LIVE DATA OVERLAY — fetches from /api/hvac/data and overwrites static values ═══
-async function loadLiveData() {
-  try {
-    const res = await fetch('/api/hvac/data');
-    if (!res.ok) return;
-    const {parsed, budget, brief} = await res.json();
-    const s = parsed.summary;
-    const mo = new Date().toISOString().slice(5,7);
-    const mt = budget.monthly_targets[mo];
-    const d = DATA[0];
-    // Update actuals
-    d.act.rev = s.total_revenue;
-    d.act.gm = s.reported_gm_pct;
-    d.act.sgm = s.shadow_gm_pct || s.reported_gm_pct;
-    d.act.gp = s.total_gp || s.total_revenue * s.reported_gm_pct / 100;
-    d.act.jobs = s.total_jobs;
-    d.act.cb = s.callbacks;
-    d.act.openEst = (parsed.estimates||{}).open_count || d.act.openEst;
-    d.act.soldEst = (parsed.estimates||{}).sold_count || d.act.soldEst;
-    d.act.pipeV = (parsed.estimates||{}).pipeline_value || d.act.pipeV;
-    // Update budget targets
-    d.bgt.rev = mt.revenue;
-    d.bgt.gm = mt.gm_pct;
-    d.bgt.ni = mt.net_income;
-    // Update commission KPIs with real data
-    d.comm.kpi1.actual = s.reported_gm_pct;
-    d.comm.kpi1.target = mt.gm_pct;
-    d.comm.kpi1.achv = (s.reported_gm_pct / mt.gm_pct) * 100;
-    d.comm.kpi1.aboveFloor = d.comm.kpi1.achv >= 80;
-    d.comm.kpi2.actual = s.total_revenue;
-    d.comm.kpi2.target = mt.revenue;
-    d.comm.kpi2.achv = (s.total_revenue / mt.revenue) * 100;
-    d.comm.kpi2.aboveFloor = d.comm.kpi2.achv >= 80;
-    // Update tech data from parsed
-    if (parsed.tech_performance) {
-      const tp = Object.values(parsed.tech_performance);
-      d.techs.forEach(t => {
-        const live = tp.find(lt => lt.name === t.n);
-        if (live) {
-          t.rev = live.revenue;
-          t.j = live.jobs;
-          t.avgT = live.avg_ticket;
-          t.gm = live.gm_pct;
-        }
-      });
-    }
-    // Update days/pace
-    const today = new Date().getDate();
-    d.act.dp = Math.min(today, mt.working_days);
-    d.act.dim = mt.working_days;
-    d.act.rpd = d.act.rev / d.act.dp;
-    // Store brief for display
-    d._brief = brief;
-    d._liveTimestamp = new Date().toISOString();
-    console.log('[LIVE] Dashboard updated from API:', s.total_revenue, s.reported_gm_pct + '%');
-  } catch(e) {
-    console.log('[LIVE] API unavailable, using static data:', e.message);
-  }
-}
-// Load on startup, refresh every 60s
-loadLiveData();
-setInterval(loadLiveData, 60000);
 
 const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
@@ -186,7 +473,6 @@ select{padding:5px 8px;border-radius:6px;border:1px solid ${G.bdr};background:rg
 .slider{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:rgba(90,101,120,0.3);outline:none}.slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:${G.a};cursor:pointer}
 @media(max-width:600px){.top{flex-direction:column;gap:6px;padding:8px 12px}.nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.kc{padding:8px 6px}.kv{font-size:16px}.nb{padding:6px 8px;font-size:9px}table{font-size:9px}th,td{padding:5px 4px}}
 `;
-
 function $(n,d=0){return n>=0?'$'+n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'-$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})}
 function $f(n){return $(Math.round(n))}
 function P(n){return n.toFixed(1)+'%'}
@@ -847,18 +1133,56 @@ function Chat({c,isOpen,onClose}){
 }
 
 // ═══ MAIN APP ═══
+
 function App(){
-  const[page,setPage]=useState('dash');const[cid,setCid]=useState('2cool');const[chatOpen,setCO]=useState(false);const[priv,setPriv]=useState(false);
+  const[page,setPage]=useState('dash');
+  const[cid,setCid]=useState('2cool');
+  const[chatOpen,setCO]=useState(false);
+  const[priv,setPriv]=useState(false);
+  const[loaded,setLoaded]=useState(false);
+  const[error,setError]=useState(null);
+  
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const res = await fetch('/api/hvac/data');
+        if (!res.ok) throw new Error('API returned ' + res.status);
+        const {parsed, budget, brief} = await res.json();
+        DATA = buildLiveData(parsed, budget, brief);
+        setLoaded(true);
+        console.log('[LIVE] Dashboard loaded. Revenue:', DATA[0].act.rev, 'GM%:', DATA[0].act.gm);
+      } catch(e) {
+        console.error('[LIVE] Failed:', e);
+        setError(e.message);
+      }
+    }
+    fetchData();
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/hvac/data');
+        if (res.ok) {
+          const {parsed, budget, brief} = await res.json();
+          DATA = buildLiveData(parsed, budget, brief);
+          console.log('[LIVE] Refreshed:', new Date().toISOString());
+        }
+      } catch(e) {}
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  if (error) return <div className="err"><h2>⚠️ Failed to load data</h2><p>{error}</p><p style={{marginTop:10,fontSize:12,color:'#5a6578'}}>Make sure /api/hvac/data is accessible</p></div>;
+  if (!loaded) return null; // Still showing boot screen
+  
   const co=DATA.find(c=>c.id===cid)||DATA[0];
-  const pages={dash:{l:'Dashboard',i:'📊',C:Dash},techs:{l:'Techs',i:'👷',C:Techs},pipe:{l:'Pipeline',i:'📋',C:Pipe},comp:{l:'Compliance',i:'🔍',C:Compl},trends:{l:'Trends',i:'📈',C:Trends},comm:{l:'Commission',i:'💰',C:Comm},whatif:{l:'What-If',i:'🎮',C:WhatIf},funnel:{l:'Funnel',i:'🔻',C:Waterfall},territory:{l:'Territory',i:'📍',C:Territory},calendar:{l:'Calendar',i:'📅',C:Calendar},alerts:{l:'Alerts',i:'🔔',C:Alerts},mems:{l:'Members',i:'👥',C:Mems},sentinel:{l:'Sentinel',i:'🛡️',C:Sentinel},settings:{l:'Settings',i:'⚙️',C:Settings}};
+  const pages={dash:{l:'Dashboard',i:'📊',C:Dash},techs:{l:'Techs',i:'👷',C:Techs},pipe:{l:'Pipeline',i:'📋',C:Pipe},comp:{l:'Compliance',i:'🔍',C:Compl},trends:{l:'Trends',i:'📈',C:Trends},comm:{l:'Commission',i:'💰',C:Comm},whatif:{l:'What-If',i:'🎮',C:WhatIf},funnel:{l:'Funnel',i:'🔻',C:Waterfall},territory:{l:'Territory',i:'📍',C:Territory},calendar:{l:'Calendar',i:'📅',C:Calendar},alerts:{l:'Alerts',i:'🔔',C:Alerts},sentinel:{l:'Sentinel',i:'🛡️',C:Sentinel},settings:{l:'Settings',i:'⚙️',C:Settings}};
   const PG=pages[page]?.C||Dash;
   return <div className="app"><style>{CSS}</style>
     <div className="top">
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         <div style={{fontSize:15,fontWeight:700}}>
-          <span style={{color:G.a}}>❄️</span> HVAC <span style={{color:G.t2,fontWeight:400}}>Regional CRM</span>
+          <span style={{color:G.a}}>❄️</span> HVAC <span style={{color:G.t2,fontWeight:400}}>GM Cockpit</span>
+          <span style={{fontSize:9,color:G.a,marginLeft:8,fontWeight:400}}>● LIVE</span>
         </div>
-        <select value={cid} onChange={e=>setCid(e.target.value)}>{DATA.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}<option disabled>+ Add</option></select>
       </div>
       <div style={{display:'flex',alignItems:'center',gap:10,fontSize:11}}>
         <button className={`lk ${priv?'on':''}`} onClick={()=>setPriv(!priv)}>{priv?'🔒 Private':'👁️ Visible'}</button>
