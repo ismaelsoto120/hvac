@@ -33,9 +33,6 @@ body{background:#080a10;color:#e8ecf4;font-family:'DM Sans',sans-serif}
 const {useState, useEffect, useRef, useMemo} = React;
 const {LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart} = window.Recharts;
 
-// This function takes the API response and builds the DATA[0] object
-// matching the exact shape all dashboard components expect
-function buildLiveData(parsed, budget, brief) {
 // LIVE DATA BUILDER — transforms /api/hvac/data into DATA[] shape
 // Every section populated from real ServiceTitan data. Zero static placeholders.
 
@@ -1131,6 +1128,7 @@ function Chat({c,isOpen,onClose}){
 }
 
 // ═══ MAIN APP ═══
+
 function App(){
   const[page,setPage]=useState('dash');
   const[cid,setCid]=useState('2cool');
@@ -1167,8 +1165,8 @@ function App(){
     return () => clearInterval(interval);
   }, []);
   
-  if (error) return <div className="err"><h2>⚠️ Failed to load data</h2><p>{error}</p><p style={{marginTop:10,fontSize:12,color:'#5a6578'}}>Make sure /api/hvac/data is accessible</p></div>;
-  if (!loaded) return null; // Still showing boot screen
+  if (error) return <div className="err"><h2>⚠️ Failed to load data</h2><p>{error}</p></div>;
+  if (!loaded) return null;
   
   const co=DATA.find(c=>c.id===cid)||DATA[0];
   const pages={dash:{l:'Dashboard',i:'📊',C:Dash},techs:{l:'Techs',i:'👷',C:Techs},pipe:{l:'Pipeline',i:'📋',C:Pipe},comp:{l:'Compliance',i:'🔍',C:Compl},trends:{l:'Trends',i:'📈',C:Trends},comm:{l:'Commission',i:'💰',C:Comm},whatif:{l:'What-If',i:'🎮',C:WhatIf},funnel:{l:'Funnel',i:'🔻',C:Waterfall},territory:{l:'Territory',i:'📍',C:Territory},calendar:{l:'Calendar',i:'📅',C:Calendar},alerts:{l:'Alerts',i:'🔔',C:Alerts},sentinel:{l:'Sentinel',i:'🛡️',C:Sentinel},settings:{l:'Settings',i:'⚙️',C:Settings}};
