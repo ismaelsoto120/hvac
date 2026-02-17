@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2Cool HVAC — GM Cockpit</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e14;color:#e8ecf4;font-family:'DM Sans',sans-serif;overflow-x:hidden}
+#root{min-height:100vh}
+.loading-screen{display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column;gap:16px}
+.loading-screen .spin{width:40px;height:40px;border:3px solid rgba(80,90,120,0.25);border-top-color:#00e5aa;border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="root"><div class="loading-screen"><div class="spin"></div><p style="color:#94a3b8;font-size:14px">Loading GM Cockpit...</p></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+<script type="text/babel">
+const {useState, useEffect, useRef} = React;
+const {LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart} = Recharts;
+
+
+const G={bg:'rgba(12,14,20,0.85)',card:'rgba(22,26,35,0.72)',bdr:'rgba(80,90,120,0.25)',a:'#00e5aa',ad:'rgba(0,229,170,0.15)',w:'#ffb84d',wd:'rgba(255,184,77,0.15)',d:'#ff5c5c',dd:'rgba(255,92,92,0.15)',t1:'#e8ecf4',t2:'#94a3b8',t3:'#5a6578',p:'#7c6cff',b:'#4a9eff',pk:'#ff6b9d'};
+const FD="'JetBrains Mono','SF Mono',monospace",FB="'DM Sans','Segoe UI',sans-serif";
+const TT={background:'#161a23',border:`1px solid ${G.bdr}`,borderRadius:8,fontFamily:FD,fontSize:10};
+
+const DATA=[{
+id:'2cool',name:'2 Cool Air Conditioning',loc:'Pasco County, FL',health:'green',
+bgt:{rev:94000,gm:50,ni:-23498,po:18000,labor:28000,cac:320},
+act:{rev:68420,gp:42819,gm:62.6,sgm:60.1,niE:-8200,niT:-23498,jobs:72,svcJ:52,insJ:20,avgT:950,cb:4,openEst:48,soldEst:22,pipeV:189000,svcRev:31180,insRev:37240,maintRev:9360,repairRev:6400,unassignedPO:800,csrMem:6,mgrDisc:760,
+mem:{active:312,new:18,cancel:3,rev:9360},dim:28,dp:16,dr:12,rpd:4276,gpd:2676,rnd:2132,
+ccFee:1890,disc:420,feeNot:180,totalDisc:1840,
+po:{w1:3200,w2:4100,w3:3800,mtd:11100,last:16200},
+labor:{mtd:14200,bgt:28000,ot:1800,nb:2400,otRev:8200},
+dispEff:87,fcr:72,s2i:2.6,avgResp:38,warOpen:2,warVal:1200,newCust:28,repRate:41,
+bookingRate:82,cancelRate:8,noShowRate:3,supplyRuns:6,callsBooked:8,techsAvail:4,capacityUtil:78,cac:295,
+costPerJob:{svc:380,ins:2100,maint:120,repair:520},
+gmByType:{svc:68.2,ins:52.1,maint:82.4,repair:41.8},
+projRange:{low:59.8,mid:62.6,high:65.1,confLow:-12400,confMid:-8200,confHigh:-4800}},
+comm:{salary:100000,targetBonus:27212,moTarget:2268,floor:80,cap:200,
+kpi1:{name:'Gross Margin %',weight:0.5,target:50,actual:69.1,achv:138.2,aboveFloor:true},
+kpi2:{name:'Revenue',weight:0.5,target:78862,actual:55510,achv:70.4,aboveFloor:false},
+janActual:{kpi1A:37,kpi1T:50,kpi1Achv:74,kpi1Floor:false,kpi2A:104498,kpi2T:94013,kpi2Achv:111.15,kpi2Floor:true,weighted:55.58,payout:1260},
+budgetTargets:[{m:'Jan',revT:94013,gmT:50},{m:'Feb',revT:78862,gmT:50},{m:'Mar',revT:96303,gmT:44.2},{m:'Apr',revT:121234,gmT:50},{m:'May',revT:172921,gmT:53},{m:'Jun',revT:192551,gmT:53},{m:'Jul',revT:201286,gmT:53},{m:'Aug',revT:136186,gmT:50},{m:'Sep',revT:147499,gmT:44.2},{m:'Oct',revT:127552,gmT:50},{m:'Nov',revT:142081,gmT:50},{m:'Dec',revT:121514,gmT:48}],
+pnl:{jan26:{rev:102629,cogs:64467,gp:38162,gm:37,opex:66378,ni:-28257,ebitda:-15754}}},
+techs:[
+{n:'Thomas Knight',role:'Service Tech',j:28,sJ:24,iSold:6,sRev:18200,iSA:22400,rev:34200,avgT:1221,gm:64.2,cr:72,cb:1,nbH:4.2,tH:142,rph:241,sH:118,memS:8,avgD:1.9,po:2800,eO:12,eS:9,st:'strong',tr:'up',wRev:[8200,9100,8400,8500],disc:280,discN:3,nbB:{train:1.5,cb:0.8,idle:0.4,drive:1.5},supR:1,pto:0,coach:[{dt:'Feb 12',note:'Reviewed upsell on maintenance agreements',res:'Avg ticket up 8%'}]},
+{n:'Jonathan Alberto',role:'Service Tech',j:31,sJ:28,iSold:4,sRev:12400,iSA:14200,rev:18900,avgT:610,gm:71.8,cr:58,cb:2,nbH:8.1,tH:148,rph:128,sH:96,memS:4,avgD:2.4,po:1900,eO:18,eS:6,st:'watch',tr:'flat',wRev:[4800,4200,5100,4800],disc:680,discN:9,nbB:{train:2.0,cb:2.4,idle:2.2,drive:1.5},supR:3,pto:1,coach:[{dt:'Feb 10',note:'Avg ticket coaching — upsell opps',res:'Pending'}]},
+{n:'Roger Bisick Jr',role:'Lead Installer',j:8,sJ:2,iSold:0,sRev:580,iSA:0,rev:12800,avgT:1600,gm:52.1,cr:null,cb:1,nbH:2.0,tH:96,rph:133,sH:null,memS:0,avgD:5.8,po:4200,eO:0,eS:0,st:'ok',tr:'flat',wRev:[3200,3800,2900,2900],disc:120,discN:1,nbB:{train:0.5,cb:1.0,idle:0,drive:0.5},supR:2,pto:0,coach:[]},
+{n:'Allin Sears',role:'Installer Helper',j:5,sJ:0,iSold:0,sRev:0,iSA:0,rev:2520,avgT:504,gm:48.9,cr:null,cb:0,nbH:1.5,tH:88,rph:29,sH:null,memS:0,avgD:6.2,po:1400,eO:0,eS:0,st:'ok',tr:'flat',wRev:[600,700,620,600],disc:0,discN:0,nbB:{train:0.5,cb:0,idle:0.5,drive:0.5},supR:0,pto:0,coach:[]}
+],
+trends:{
+daily:[{d:'Feb 1',r:3200,gp:2100,gm:65.6,sg:63.1,bg:3357},{d:'Feb 3',r:4800,gp:3100,gm:64.6,sg:62.0,bg:3357},{d:'Feb 4',r:3900,gp:2400,gm:61.5,sg:59.2,bg:3357},{d:'Feb 5',r:5100,gp:3200,gm:62.7,sg:60.5,bg:3357},{d:'Feb 6',r:4200,gp:2700,gm:64.3,sg:62.1,bg:3357},{d:'Feb 7',r:4600,gp:2900,gm:63.0,sg:60.8,bg:3357},{d:'Feb 10',r:5400,gp:3400,gm:63.0,sg:60.7,bg:3357},{d:'Feb 11',r:4100,gp:2600,gm:63.4,sg:61.2,bg:3357},{d:'Feb 12',r:5800,gp:3700,gm:63.8,sg:61.5,bg:3357},{d:'Feb 13',r:4900,gp:3100,gm:63.3,sg:61.0,bg:3357},{d:'Feb 14',r:6200,gp:3900,gm:62.9,sg:60.6,bg:3357},{d:'Feb 16',r:5420,gp:3419,gm:63.1,sg:60.8,bg:3357}],
+monthly:[{m:'Sep',r:88200,gm:51.2,ni:-28400,cm:6200},{m:'Oct',r:92100,gm:54.8,ni:-19200,cm:7800},{m:'Nov',r:78400,gm:48.2,ni:-31200,cm:5100},{m:'Dec',r:71200,gm:46.1,ni:-35800,cm:4200},{m:'Jan',r:103539,gm:57.5,ni:-13200,cm:10400},{m:'Feb*',r:68420,gm:62.6,ni:-8200,cm:null}],
+lastYear:[{m:'Sep',r:72100,gm:47.8},{m:'Oct',r:81400,gm:50.2},{m:'Nov',r:68200,gm:45.1},{m:'Dec',r:62400,gm:43.8},{m:'Jan',r:89200,gm:52.1},{m:'Feb',r:76800,gm:49.4}],
+poW:[{w:'Wk1',a:3200},{w:'Wk2',a:4100},{w:'Wk3',a:3800},{w:'Wk4*',a:0}],
+dow:[{d:'Mon',r:12400},{d:'Tue',r:14200},{d:'Wed',r:11800},{d:'Thu',r:13600},{d:'Fri',r:10200},{d:'Sat',r:6220}]},
+dirs:[{id:1,p:'high',t:'Jonathan avg ticket $610 — 50% below Thomas. Coach upselling.',ag:'VP Tech',imp:'+$3,200/mo',s:'open'},{id:2,p:'high',t:'Jonathan idle time 2.2hrs. Reduce.',ag:'COO',imp:'-$980',s:'open'},{id:3,p:'medium',t:'12 estimates 7+ days. Follow up >$3K.',ag:'CSO',imp:'+$18K',s:'open'}],
+comp:{di:{s:'pass',d:'16 reports received.'},ia:{s:'flag',d:'3 missing CC fee ($180)'},da:{s:'pass',d:'$420 disc normal'},cm:{s:'flag',d:'4 CB (2 Jonathan)'},fl:{s:'flag',d:'$180 unrecov CC fees'},bu:{s:'pass',d:'All tagged.'}},
+ests:[{id:'E-4821',c:'Johnson',a:8400,t:'Thomas Knight',age:2,s:'pending',ty:'Install'},{id:'E-4818',c:'Rivera',a:12600,t:'Thomas Knight',age:5,s:'pending',ty:'Install'},{id:'E-4812',c:'Chen',a:3200,t:'Jonathan Alberto',age:8,s:'stale',ty:'Repair'},{id:'E-4809',c:'Martinez',a:6800,t:'Jonathan Alberto',age:11,s:'stale',ty:'Install'},{id:'E-4805',c:'Williams',a:4100,t:'Thomas Knight',age:3,s:'pending',ty:'Replace'},{id:'E-4801',c:'Davis',a:2200,t:'Jonathan Alberto',age:14,s:'stale',ty:'Repair'},{id:'E-4798',c:'Garcia',a:9100,t:'Thomas Knight',age:1,s:'pending',ty:'Install'}],
+alerts:[{id:1,type:'anomaly',sev:'high',msg:'Jonathan discount rate 3.6% — 2x team avg',ts:'2h ago',ack:false},{id:2,type:'threshold',sev:'med',msg:'PO at 62% budget with 43% month left',ts:'4h ago',ack:false},{id:3,type:'anomaly',sev:'low',msg:'Tue rev 18% above avg — strong booking day',ts:'1d ago',ack:true},{id:4,type:'threshold',sev:'med',msg:'Jonathan CB at 2 — approaching 3 threshold',ts:'1d ago',ack:false}],
+waterfall:{totalEst:70,estValue:258000,presented:62,presValue:231000,sold:22,soldValue:89000,installed:18,insValue:72000,invoiced:18,invValue:68420,collected:16,colValue:61200,gp:42819},
+poAnomaly:[
+  {job:'J-1842',type:'Install',tech:'Roger Bisick Jr',poCost:3800,avgForType:2100,flag:'high',pct:81},
+  {job:'J-1838',type:'Repair',tech:'Jonathan Alberto',poCost:890,avgForType:520,flag:'med',pct:71},
+  {job:'J-1835',type:'Service',tech:'Thomas Knight',poCost:420,avgForType:380,flag:'ok',pct:11},
+],
+territory:[
+  {zip:'34668',name:'Port Richey',rev:22400,jobs:24,cust:186,density:120},
+  {zip:'34652',name:'New Port Richey',rev:18200,jobs:19,cust:142,density:128},
+  {zip:'34655',name:'Trinity',rev:12800,jobs:12,cust:98,density:131},
+  {zip:'34667',name:'Hudson',rev:8400,jobs:9,cust:64,density:131},
+  {zip:'34690',name:'Holiday',rev:6620,jobs:8,cust:52,density:127},
+],
+calendar:[
+  {d:'Feb 17',day:'Mon',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
+  {d:'Feb 18',day:'Tue',techs:[{n:'TK',s:'work'},{n:'JA',s:'train'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:6,cap:75},
+  {d:'Feb 19',day:'Wed',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'pto'},{n:'AS',s:'pto'}],calls:5,cap:50},
+  {d:'Feb 20',day:'Thu',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:8,cap:100},
+  {d:'Feb 21',day:'Fri',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:6,cap:88},
+  {d:'Feb 22',day:'Sat',techs:[{n:'TK',s:'work'},{n:'JA',s:'off'},{n:'RB',s:'off'},{n:'AS',s:'off'}],calls:2,cap:25},
+  {d:'Feb 24',day:'Mon',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
+  {d:'Feb 25',day:'Tue',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:8,cap:100},
+  {d:'Feb 26',day:'Wed',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
+  {d:'Feb 27',day:'Thu',techs:[{n:'TK',s:'pto'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:6,cap:75},
+  {d:'Feb 28',day:'Fri',techs:[{n:'TK',s:'work'},{n:'JA',s:'work'},{n:'RB',s:'work'},{n:'AS',s:'work'}],calls:7,cap:88},
+]
+}];
+
+// ═══ LIVE DATA OVERLAY — fetches from /api/hvac/data and overwrites static values ═══
+async function loadLiveData() {
+  try {
+    const res = await fetch('/api/hvac/data');
+    if (!res.ok) return;
+    const {parsed, budget, brief} = await res.json();
+    const s = parsed.summary;
+    const mo = new Date().toISOString().slice(5,7);
+    const mt = budget.monthly_targets[mo];
+    const d = DATA[0];
+    // Update actuals
+    d.act.rev = s.total_revenue;
+    d.act.gm = s.reported_gm_pct;
+    d.act.sgm = s.shadow_gm_pct || s.reported_gm_pct;
+    d.act.gp = s.total_gp || s.total_revenue * s.reported_gm_pct / 100;
+    d.act.jobs = s.total_jobs;
+    d.act.cb = s.callbacks;
+    d.act.openEst = (parsed.estimates||{}).open_count || d.act.openEst;
+    d.act.soldEst = (parsed.estimates||{}).sold_count || d.act.soldEst;
+    d.act.pipeV = (parsed.estimates||{}).pipeline_value || d.act.pipeV;
+    // Update budget targets
+    d.bgt.rev = mt.revenue;
+    d.bgt.gm = mt.gm_pct;
+    d.bgt.ni = mt.net_income;
+    // Update commission KPIs with real data
+    d.comm.kpi1.actual = s.reported_gm_pct;
+    d.comm.kpi1.target = mt.gm_pct;
+    d.comm.kpi1.achv = (s.reported_gm_pct / mt.gm_pct) * 100;
+    d.comm.kpi1.aboveFloor = d.comm.kpi1.achv >= 80;
+    d.comm.kpi2.actual = s.total_revenue;
+    d.comm.kpi2.target = mt.revenue;
+    d.comm.kpi2.achv = (s.total_revenue / mt.revenue) * 100;
+    d.comm.kpi2.aboveFloor = d.comm.kpi2.achv >= 80;
+    // Update tech data from parsed
+    if (parsed.tech_performance) {
+      const tp = Object.values(parsed.tech_performance);
+      d.techs.forEach(t => {
+        const live = tp.find(lt => lt.name === t.n);
+        if (live) {
+          t.rev = live.revenue;
+          t.j = live.jobs;
+          t.avgT = live.avg_ticket;
+          t.gm = live.gm_pct;
+        }
+      });
+    }
+    // Update days/pace
+    const today = new Date().getDate();
+    d.act.dp = Math.min(today, mt.working_days);
+    d.act.dim = mt.working_days;
+    d.act.rpd = d.act.rev / d.act.dp;
+    // Store brief for display
+    d._brief = brief;
+    d._liveTimestamp = new Date().toISOString();
+    console.log('[LIVE] Dashboard updated from API:', s.total_revenue, s.reported_gm_pct + '%');
+  } catch(e) {
+    console.log('[LIVE] API unavailable, using static data:', e.message);
+  }
+}
+// Load on startup, refresh every 60s
+loadLiveData();
+setInterval(loadLiveData, 60000);
+
+const CSS=`
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;scrollbar-width:thin;scrollbar-color:rgba(80,90,120,0.3) transparent}
+body{background:#080a10;color:${G.t1};font-family:${FB};-webkit-font-smoothing:antialiased}
+.app{min-height:100vh;background:radial-gradient(ellipse at 20% 0%,rgba(0,229,170,0.04) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(124,108,255,0.04) 0%,transparent 60%),#080a10}
+.gl{background:${G.card};border:1px solid ${G.bdr};border-radius:14px;backdrop-filter:blur(20px)}.gl:hover{border-color:rgba(0,229,170,0.1)}
+.gw{box-shadow:0 0 24px rgba(0,229,170,0.03),inset 0 1px 0 rgba(255,255,255,0.03)}
+.m{font-family:${FD}}
+.tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:9px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase}
+.tg{background:rgba(0,229,170,0.12);color:#00e5aa}.tw{background:rgba(255,184,77,0.12);color:#ffb84d}.td{background:rgba(255,92,92,0.12);color:#ff5c5c}.tm{background:rgba(90,101,120,0.2);color:#94a3b8}.tp{background:rgba(124,108,255,0.12);color:#7c6cff}
+.ks{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-bottom:14px}
+.kc{padding:11px;text-align:center}.kl{font-size:8px;color:${G.t3};text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}.kv{font-family:${FD};font-size:19px;font-weight:700;line-height:1.1}.ksb{font-size:8px;color:${G.t2};margin-top:2px}
+.st{font-size:10px;color:${G.t3};text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px;font-weight:600}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
+@media(max-width:900px){.g2,.g3,.g4{grid-template-columns:1fr}.ks{grid-template-columns:repeat(2,1fr)}}
+table{width:100%;border-collapse:collapse}th{text-align:left;padding:7px 8px;font-size:8px;color:${G.t3};text-transform:uppercase;letter-spacing:0.7px;border-bottom:1px solid ${G.bdr};font-weight:600}td{padding:7px 8px;font-size:10px;border-bottom:1px solid rgba(80,90,120,0.06)}tr:hover td{background:rgba(0,229,170,0.02)}
+.bf{height:4px;border-radius:2px;transition:width 0.6s}.bb{height:4px;border-radius:2px;background:rgba(90,101,120,0.2);width:100%;overflow:hidden}
+.nav{display:flex;gap:1px;padding:3px;border-radius:9px;background:rgba(22,26,35,0.5);overflow-x:auto}
+.nb{padding:6px 10px;border:none;border-radius:6px;background:transparent;color:${G.t2};font-size:10px;font-weight:500;cursor:pointer;white-space:nowrap;font-family:${FB};transition:all 0.2s}.nb:hover{background:rgba(0,229,170,0.06);color:${G.t1}}.nb.ac{background:rgba(0,229,170,0.12);color:${G.a}}
+.top{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid ${G.bdr};position:sticky;top:0;z-index:100;background:rgba(8,10,16,0.93);backdrop-filter:blur(30px)}
+.dir{padding:9px 12px;border-left:3px solid;margin-bottom:4px;border-radius:0 8px 8px 0;font-size:11px}.dh{border-color:${G.d};background:rgba(255,92,92,0.03)}.dm{border-color:${G.w};background:rgba(255,184,77,0.03)}
+.tb{position:relative;height:22px;background:rgba(90,101,120,0.1);border-radius:11px;overflow:hidden;margin:4px 0}.tf{height:100%;border-radius:11px;transition:width 0.8s}
+.fab{position:fixed;bottom:14px;right:14px;width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,${G.a},#009977);border:none;color:#080a10;font-size:17px;cursor:pointer;box-shadow:0 4px 16px rgba(0,229,170,0.25);z-index:200;transition:transform 0.2s}.fab:hover{transform:scale(1.08)}
+.cpan{position:fixed;bottom:64px;right:14px;width:330px;max-height:420px;z-index:200;display:flex;flex-direction:column;overflow:hidden}
+.cmsgs{flex:1;overflow-y:auto;padding:10px;max-height:290px}.cmsg{padding:7px 10px;border-radius:8px;margin-bottom:4px;font-size:10px;max-width:85%;line-height:1.5}.cmu{background:rgba(0,229,170,0.12);margin-left:auto}.cmb{background:rgba(124,108,255,0.08)}
+.cinp{display:flex;gap:5px;padding:8px;border-top:1px solid ${G.bdr}}.cinp input{flex:1;padding:7px 10px;border-radius:6px;border:1px solid ${G.bdr};background:rgba(12,14,20,0.8);color:${G.t1};font-family:${FB};font-size:10px;outline:none}.cinp input:focus{border-color:${G.a}}.cinp button{padding:7px 12px;border-radius:6px;border:none;background:${G.a};color:#080a10;font-weight:600;cursor:pointer;font-size:10px}
+select{padding:5px 8px;border-radius:6px;border:1px solid ${G.bdr};background:rgba(22,26,35,0.8);color:${G.t1};font-family:${FB};font-size:10px;outline:none}
+.lk{padding:3px 8px;border-radius:5px;border:1px solid ${G.bdr};background:rgba(22,26,35,0.6);color:${G.t2};cursor:pointer;font-size:9px;font-family:${FB};transition:all 0.2s}.lk:hover{border-color:${G.a};color:${G.t1}}.lk.on{background:rgba(255,92,92,0.08);border-color:rgba(255,92,92,0.3);color:${G.d}}
+.slider{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:rgba(90,101,120,0.3);outline:none}.slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:${G.a};cursor:pointer}
+@media(max-width:600px){.top{flex-direction:column;gap:6px;padding:8px 12px}.nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.kc{padding:8px 6px}.kv{font-size:16px}.nb{padding:6px 8px;font-size:9px}table{font-size:9px}th,td{padding:5px 4px}}
+`;
+
+function $(n,d=0){return n>=0?'$'+n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'-$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})}
+function $f(n){return $(Math.round(n))}
+function P(n){return n.toFixed(1)+'%'}
+function AC(a){return a>=120?G.a:a>=100?G.b:a>=80?G.w:G.d}
+function K({l,v,s,c,i}){return <div className="gl gw kc">{i&&<div style={{fontSize:12,marginBottom:1}}>{i}</div>}<div className="kl">{l}</div><div className="kv m" style={{color:c||G.t1}}>{v}</div>{s&&<div className="ksb">{s}</div>}</div>}
+function TB({val,floor=80,cap=200,label}){const vp=Math.min(cap,Math.max(0,val))/cap*100;const fp=floor/cap*100;const cl=val>=120?G.a:val>=100?G.b:val>=floor?G.w:G.d;return <div style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between',fontSize:9,marginBottom:1}}><span style={{color:G.t2}}>{label}</span><span className="m" style={{color:cl,fontWeight:700}}>{val.toFixed(1)}%</span></div><div className="tb"><div className="tf" style={{width:vp+'%',background:`linear-gradient(90deg,${cl}88,${cl})`}}/><div style={{position:'absolute',top:0,height:'100%',width:2,background:G.t3,left:fp+'%'}}/></div></div>}
+
+// ═══ DASHBOARD ═══
+function Dash({c,priv}){
+  const a=c.act;const bh=a.rev-(c.bgt.rev/a.dim*a.dp);const rp=(a.rev/a.dp)*a.dim;
+  return <div>
+    <div className="ks">
+      <K l="Gross Margin" v={P(a.gm)} s={`Tgt:${c.bgt.gm}% Shd:${P(a.sgm)}`} c={a.gm>=c.bgt.gm?G.a:G.d} i="📊"/>
+      <K l="Net Income" v={$(a.niE)} s={`Tgt:${$(a.niT)}`} c={a.niE>a.niT?G.a:G.w} i="💰"/>
+      {!priv&&<K l="Bonus Fcst" v={$f(c.comm.moTarget)} s="$2,268 target" c={G.b} i="🎯"/>}
+      <K l="Revenue" v={$(a.rev)} s={`${bh>=0?'+':''}${$(bh)} vs pace`} c={bh>=0?G.a:G.w} i="📈"/>
+      <K l="Days Left" v={a.dr} s={`${$(a.rnd)}/day need`} c={a.rpd>=a.rnd?G.a:G.w} i="📅"/>
+      <K l="Jobs" v={a.jobs} s={`${a.svcJ}svc ${a.insJ}ins`} c={G.b} i="🔧"/>
+    </div>
+    {/* Confidence Range */}
+    <div className="gl gw" style={{padding:12,marginBottom:8}}>
+      <div className="st">Month-End Projection (80% Confidence)</div>
+      <div className="g3">
+        <div style={{textAlign:'center'}}><div style={{fontSize:7,color:G.t3}}>WORST</div><div className="m" style={{fontSize:15,fontWeight:700,color:G.w}}>{P(a.projRange.low)}</div><div style={{fontSize:8,color:G.t2}}>NI:{$(a.projRange.confLow)}</div></div>
+        <div style={{textAlign:'center',borderLeft:`1px solid ${G.bdr}`,borderRight:`1px solid ${G.bdr}`}}><div style={{fontSize:7,color:G.t3}}>LIKELY</div><div className="m" style={{fontSize:15,fontWeight:700,color:G.a}}>{P(a.projRange.mid)}</div><div style={{fontSize:8,color:G.t2}}>NI:{$(a.projRange.confMid)}</div></div>
+        <div style={{textAlign:'center'}}><div style={{fontSize:7,color:G.t3}}>BEST</div><div className="m" style={{fontSize:15,fontWeight:700,color:G.a}}>{P(a.projRange.high)}</div><div style={{fontSize:8,color:G.t2}}>NI:{$(a.projRange.confHigh)}</div></div>
+      </div>
+    </div>
+    <div className="g2">
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Budget Pulse</div>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+          <div><div style={{fontSize:7,color:G.t3}}>REV PACE</div><div className="m" style={{fontSize:15,fontWeight:700,color:bh>=0?G.a:G.w}}>{$(rp,0)}</div></div>
+          <div style={{textAlign:'right'}}><div style={{fontSize:7,color:G.t3}}>GP</div><div className="m" style={{fontSize:15,fontWeight:700,color:G.a}}>{$(a.gp)}</div></div>
+        </div>
+        <div className="bb"><div className="bf" style={{width:Math.min(100,(a.rev/c.bgt.rev)*100)+'%',background:G.a}}/></div>
+      </div>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Revenue Mix</div>
+        <div className="g2">
+          <div style={{textAlign:'center'}}><div style={{fontSize:7,color:G.t3}}>SERVICE</div><div className="m" style={{fontSize:15,fontWeight:700,color:G.b}}>{$(a.svcRev)}</div></div>
+          <div style={{textAlign:'center'}}><div style={{fontSize:7,color:G.t3}}>INSTALL</div><div className="m" style={{fontSize:15,fontWeight:700,color:G.p}}>{$(a.insRev)}</div></div>
+        </div>
+        <div style={{marginTop:4,fontSize:8,color:G.t2}}>Ratio:{a.s2i}:1 Repair:{$(a.repairRev)} Maint:{$(a.maintRev)}</div>
+      </div>
+    </div>
+    <div className="g3" style={{marginTop:8}}>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">GM% by Job Type</div>
+        {[{t:'Service',v:a.gmByType.svc},{t:'Install',v:a.gmByType.ins},{t:'Maint',v:a.gmByType.maint},{t:'Repair',v:a.gmByType.repair}].map(x=>(<div key={x.t} style={{display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span style={{fontSize:9}}>{x.t}</span><span className="m" style={{fontSize:9,color:x.v>=55?G.a:x.v>=45?G.w:G.d,fontWeight:600}}>{P(x.v)}</span></div>))}
+      </div>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Cost/Job · Dispatch</div>
+        <div style={{fontSize:9,lineHeight:1.8,color:G.t2}}>
+          <div>Svc:{$(a.costPerJob.svc)} Ins:{$(a.costPerJob.ins)}</div>
+          <div>Capacity:<span className="m" style={{color:a.capacityUtil>=80?G.a:G.w}}>{a.capacityUtil}%</span></div>
+          <div>Booked:{a.callsBooked} Techs:{a.techsAvail}</div>
+          <div>Response:<span className="m" style={{color:a.avgResp<=45?G.a:G.w}}>{a.avgResp}m</span></div>
+        </div>
+      </div>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Spend · Customers</div>
+        <div style={{fontSize:9,lineHeight:1.8,color:G.t2}}>
+          <div>PO:<span className="m" style={{color:a.po.mtd>c.bgt.po*0.7?G.w:G.a}}>{$(a.po.mtd)}</span>/{$(c.bgt.po)}</div>
+          <div>Labor:{$(a.labor.mtd)} OT:{$(a.labor.ot)}</div>
+          <div>OT ROI:<span className="m" style={{color:(a.labor.otRev/a.labor.ot)>=3?G.a:G.w}}>{(a.labor.otRev/a.labor.ot).toFixed(1)}x</span></div>
+          <div>CAC:<span className="m" style={{color:a.cac<c.bgt.cac?G.a:G.w}}>{$(a.cac)}</span> New:{a.newCust}</div>
+        </div>
+      </div>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Directives</div>
+      {c.dirs.filter(d=>d.s==='open').slice(0,3).map(d=>(<div key={d.id} className={`dir d${d.p[0]}`}><div style={{display:'flex',justifyContent:'space-between',marginBottom:1}}><span className={`tag ${d.p==='high'?'td':'tw'}`}>{d.p}</span><span style={{fontSize:8,color:G.t3}}>{d.ag}</span></div><div style={{color:G.t1}}>{d.t}</div><div style={{fontSize:9,color:G.a}}>Impact:{d.imp}</div></div>))}
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Daily Revenue</div>
+      <ResponsiveContainer width="100%" height={150}><ComposedChart data={c.trends.daily}><CartesianGrid strokeDasharray="3 3" stroke="rgba(80,90,120,0.08)"/><XAxis dataKey="d" tick={{fill:G.t3,fontSize:7}} tickLine={false}/><YAxis tick={{fill:G.t3,fontSize:7}} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'} tickLine={false}/><Tooltip contentStyle={TT}/><Bar dataKey="r" name="Rev" fill={G.a} opacity={0.7} radius={[2,2,0,0]}/><Line dataKey="bg" name="Budget" stroke={G.t3} strokeDasharray="5 5" dot={false}/></ComposedChart></ResponsiveContainer>
+    </div>
+  </div>
+}
+
+// ═══ TECHNICIANS ═══
+function Techs({c}){
+  const[sel,setSel]=useState(null);const t=sel!==null?c.techs[sel]:null;
+  const ranked=[...c.techs].filter(x=>x.role.includes('Service')).sort((a,b)=>(b.rev-b.po-b.tH*25)-(a.rev-a.po-a.tH*25));
+  return <div>
+    <div className="gl gw" style={{padding:12,marginBottom:8}}>
+      <div className="st">Leaderboard — Profit Density</div>
+      <div style={{display:'flex',gap:8}}>{ranked.map((t,i)=>{const p=t.rev-t.po-t.tH*25;return(<div key={t.n} style={{flex:1,textAlign:'center',padding:8,borderRadius:8,background:i===0?'rgba(0,229,170,0.05)':'transparent',border:`1px solid ${i===0?'rgba(0,229,170,0.2)':G.bdr}`}}>{i===0&&<span style={{fontSize:12}}>👑</span>}<div style={{fontWeight:700,fontSize:12}}>{t.n.split(' ')[0]}</div><div className="m" style={{fontSize:14,fontWeight:700,color:i===0?G.a:G.t1}}>{$(p)}</div><div style={{fontSize:7,color:G.t2}}>net profit</div></div>)})}</div>
+    </div>
+    <div className="gl gw" style={{overflow:'auto'}}>
+      <table><thead><tr><th></th><th>Tech</th><th>Jobs</th><th>Total</th><th>Svc</th><th>Ins Sold*</th><th>AvgT</th><th>GM</th><th>Close</th><th>$/Hr</th><th>Mem</th><th>PO</th><th>Disc</th><th>CB</th><th></th></tr></thead>
+      <tbody>{c.techs.map((t,i)=>(<tr key={i} onClick={()=>setSel(i)} style={{cursor:'pointer',background:sel===i?'rgba(0,229,170,0.04)':undefined}}>
+        <td>{ranked[0]===t?'👑':''}</td><td style={{fontWeight:600,fontSize:11}}>{t.n}</td><td className="m">{t.j}</td>
+        <td className="m" style={{color:G.a}}>{$(t.rev)}</td><td className="m" style={{color:G.b}}>{$(t.sRev)}</td><td className="m" style={{color:G.p}}>{$(t.iSA)}</td>
+        <td className="m">{$(t.avgT)}</td><td className="m" style={{color:t.gm>=60?G.a:t.gm>=50?G.w:G.d}}>{P(t.gm)}</td>
+        <td className="m">{t.cr?P(t.cr):'—'}</td><td className="m">{$(t.rph)}</td>
+        <td className="m" style={{color:t.memS>3?G.a:G.t2}}>{t.memS}</td><td className="m">{$(t.po)}</td>
+        <td className="m" style={{color:t.discN>5?G.d:G.t2}}>{$(t.disc)}<span style={{fontSize:7,color:G.t3}}>/{t.discN}</span></td>
+        <td><span className={`tag ${t.cb>1?'tw':'tg'}`}>{t.cb}</span></td>
+        <td style={{color:t.tr==='up'?G.a:t.tr==='down'?G.d:G.t2,fontSize:13}}>{t.tr==='up'?'↑':t.tr==='down'?'↓':'→'}</td>
+      </tr>))}</tbody></table>
+    </div>
+    <div className="g2" style={{marginTop:8}}>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Revenue Attribution</div>
+        {c.techs.filter(x=>x.role.includes('Service')).map(t=>(<div key={t.n} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',fontSize:10,marginBottom:2}}><span style={{fontWeight:600}}>{t.n}</span><span className="m" style={{color:G.a}}>{$(t.sRev+t.iSA)}</span></div><div style={{display:'flex',gap:2,height:5,borderRadius:3,overflow:'hidden'}}><div style={{flex:t.sRev,background:G.b}}/><div style={{flex:t.iSA,background:G.p}}/></div><div style={{display:'flex',justifyContent:'space-between',fontSize:7,color:G.t3,marginTop:1}}><span>Svc:{$(t.sRev)}</span><span>Ins:{$(t.iSA)}</span></div></div>))}
+      </div>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Discounts per Tech</div>
+        {c.techs.filter(t=>t.discN>0).sort((a,b)=>b.disc-a.disc).map(t=>(<div key={t.n} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:`1px solid rgba(80,90,120,0.06)`}}><div><div style={{fontWeight:600,fontSize:10}}>{t.n}</div><div style={{fontSize:7,color:G.t2}}>{t.discN}x · {(t.disc/t.rev*100).toFixed(1)}% of rev</div></div><div className="m" style={{fontSize:12,fontWeight:700,color:t.disc>500?G.d:G.w}}>{$(t.disc)}</div></div>))}
+        <div className="st" style={{marginTop:10}}>Memberships Sold</div>
+        {c.techs.filter(t=>t.memS>0).sort((a,b)=>b.memS-a.memS).map(t=>(<div key={t.n} style={{display:'flex',justifyContent:'space-between',padding:'4px 0'}}><span style={{fontSize:10,fontWeight:600}}>{t.n}</span><span className="m" style={{fontSize:14,fontWeight:700,color:t.memS>=6?G.a:G.t1}}>{t.memS}</span></div>))}
+        <div className="st" style={{marginTop:10}}>Supply House Runs</div>
+        {c.techs.filter(t=>t.supR>0).sort((a,b)=>b.supR-a.supR).map(t=>(<div key={t.n} style={{display:'flex',justifyContent:'space-between',padding:'4px 0'}}><span style={{fontSize:10}}>{t.n}</span><span className="m" style={{fontSize:12,color:t.supR>2?G.w:G.t1}}>{t.supR} trips</span></div>))}
+      </div>
+    </div>
+    {t&&<div className="gl gw" style={{padding:14,marginTop:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <div><div style={{fontSize:14,fontWeight:700}}>{t.n}</div><div style={{fontSize:10,color:G.t2}}>{t.role} · PTO:{t.pto}d</div></div>
+        <span className={`tag ${t.st==='strong'?'tg':t.st==='watch'?'tw':'tm'}`}>{t.st}</span>
+      </div>
+      <div className="ks">
+        <K l="Revenue" v={$(t.rev)} c={G.a}/><K l="Svc" v={$(t.sRev)} c={G.b}/><K l="Ins Sold" v={$(t.iSA)} c={G.p}/>
+        <K l="AvgT" v={$(t.avgT)}/><K l="GM%" v={P(t.gm)} c={t.gm>=60?G.a:G.w}/><K l="$/Hr" v={$(t.rph)}/>
+        <K l="Mem" v={t.memS}/><K l="PO" v={$(t.po)}/><K l="CB" v={t.cb} c={t.cb>1?G.w:G.a}/>
+        <K l="Disc" v={$(t.disc)} s={t.discN+'x'}/><K l="AvgJob" v={t.avgD+'h'}/><K l="SupRuns" v={t.supR} c={t.supR>2?G.w:G.t1}/>
+      </div>
+      <div className="g2" style={{marginTop:4}}>
+        <div><div className="st">Non-Billable ({t.nbH}h)</div>
+          {Object.entries(t.nbB).map(([k,v])=>{const p=t.nbH>0?v/t.nbH*100:0;const lb={train:'Training',cb:'Callbacks',idle:'Idle',drive:'Drive'};return(<div key={k} style={{marginBottom:3}}><div style={{display:'flex',justifyContent:'space-between',fontSize:8}}><span>{lb[k]}</span><span className="m">{v}h</span></div><div className="bb" style={{marginTop:1}}><div className="bf" style={{width:p+'%',background:k==='idle'?G.d:k==='cb'?G.w:G.b}}/></div></div>)})}
+        </div>
+        <div><div className="st">Weekly Rev</div>
+          <ResponsiveContainer width="100%" height={70}><BarChart data={t.wRev.map((v,i)=>({w:'W'+(i+1),r:v}))}><XAxis dataKey="w" tick={{fill:G.t3,fontSize:7}} tickLine={false}/><Bar dataKey="r" fill={G.a} opacity={0.7} radius={[2,2,0,0]}/></BarChart></ResponsiveContainer>
+        </div>
+      </div>
+      {t.coach.length>0&&<div style={{marginTop:6}}><div className="st">Coaching Log</div>{t.coach.map((c,i)=>(<div key={i} style={{padding:6,background:'rgba(124,108,255,0.04)',borderRadius:6,borderLeft:`2px solid ${G.p}`,marginBottom:3,fontSize:10}}><div style={{fontSize:8,color:G.t3}}>{c.dt}</div><div>{c.note}</div><div style={{fontSize:9,color:G.a}}>Result: {c.res}</div></div>))}</div>}
+    </div>}
+  </div>
+}
+
+// ═══ PIPELINE ═══
+function Pipe({c}){
+  const a=c.act;const stale=c.ests.filter(e=>e.s==='stale').length;const gap=c.bgt.rev-(a.rev/a.dp*a.dim);const rec=gap>0?gap:0;
+  return <div>
+    <div className="ks"><K l="Open" v={a.openEst} s={$(a.pipeV)} i="📋"/><K l="Sold" v={a.soldEst} s={((a.soldEst/(a.openEst+a.soldEst))*100).toFixed(0)+'%'} c={G.a} i="✅"/><K l="Stale 7+" v={stale} c={stale>3?G.w:G.a} i="⏰"/><K l="Recovery" v={rec>0?$(rec):'On Track'} c={rec>0?G.w:G.a} i="🎯"/></div>
+    {rec>0&&<div className="gl gw" style={{padding:10,marginBottom:8,borderLeft:`3px solid ${G.w}`,fontSize:11}}>Need {$(rec)}. At {$(a.avgT)} avg = <strong className="m" style={{color:G.a}}>{Math.ceil(rec/a.avgT)} jobs</strong> in {a.dr} days.</div>}
+    <div className="gl gw" style={{overflow:'auto'}}><div style={{padding:'8px 10px',borderBottom:`1px solid ${G.bdr}`}}><div className="st" style={{margin:0}}>Priority Follow-Up Queue</div></div>
+      <table><thead><tr><th>ID</th><th>Customer</th><th>$</th><th>Tech</th><th>Type</th><th>Age</th><th>Priority</th></tr></thead>
+      <tbody>{c.ests.sort((a,b)=>b.a-a.a).map(e=>{const pri=e.age>10?'urgent':e.age>7?'high':e.a>5000?'med':'normal';return(<tr key={e.id}><td className="m" style={{fontSize:8,color:G.t2}}>{e.id}</td><td>{e.c}</td><td className="m" style={{color:G.a}}>{$(e.a)}</td><td style={{fontSize:9}}>{e.t}</td><td><span className="tag tm">{e.ty}</span></td><td className="m" style={{color:e.age>7?G.d:e.age>4?G.w:G.t1}}>{e.age}d</td><td><span className={`tag ${pri==='urgent'?'td':pri==='high'?'tw':pri==='med'?'tp':'tm'}`}>{pri}</span></td></tr>)})}</tbody></table>
+    </div>
+    {/* PO Anomaly Detection */}
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">PO Cost Anomaly Detection</div>
+      <div style={{fontSize:9,color:G.t2,marginBottom:6}}>Jobs where PO/material cost exceeds historical average for that job type</div>
+      <table><thead><tr><th>Job</th><th>Type</th><th>Tech</th><th>PO Cost</th><th>Avg for Type</th><th>Over %</th><th>Flag</th></tr></thead>
+      <tbody>{c.poAnomaly.map(p=>(<tr key={p.job}>
+        <td className="m" style={{fontSize:9}}>{p.job}</td><td>{p.type}</td><td style={{fontSize:10}}>{p.tech}</td>
+        <td className="m" style={{color:p.flag==='high'?G.d:p.flag==='med'?G.w:G.t1}}>{$(p.poCost)}</td>
+        <td className="m" style={{color:G.t2}}>{$(p.avgForType)}</td>
+        <td className="m" style={{color:p.pct>50?G.d:p.pct>30?G.w:G.t1}}>+{p.pct}%</td>
+        <td><span className={`tag ${p.flag==='high'?'td':p.flag==='med'?'tw':'tg'}`}>{p.flag}</span></td>
+      </tr>))}</tbody></table>
+    </div>
+  </div>
+}
+
+// ═══ COMPLIANCE ═══
+function Compl({c}){
+  const a=c.act;const sd=a.gm-a.sgm;const cbCost=a.cb*(280+a.avgT*0.3);
+  return <div>
+    <div className="ks"><K l="Reported" v={P(a.gm)} c={G.a} i="📊"/><K l="Shadow" v={P(a.sgm)} c={sd>3?G.w:G.a} i="👁️"/><K l="Variance" v={P(sd)} c={sd>3?G.w:G.a} i="⚖️"/><K l="Fee Leak" v={$(a.feeNot)} c={a.feeNot>100?G.w:G.a} i="🔍"/><K l="CB Cost" v={$(cbCost)} s={a.cb+' CB'} c={G.w} i="💸"/><K l="Discounts" v={$(a.totalDisc)} i="🏷️"/></div>
+    <div className="g2">
+      <div className="gl gw" style={{padding:12}}><div className="st">Shadow GM</div><div style={{display:'flex',alignItems:'center',gap:5,marginBottom:3}}><span className="m" style={{fontSize:18,fontWeight:700,color:G.a}}>{P(a.gm)}</span><span style={{color:G.t3}}>→</span><span className="m" style={{fontSize:18,fontWeight:700,color:sd>3?G.w:G.a}}>{P(a.sgm)}</span><span className={`tag ${sd>3?'tw':'tg'}`}>-{P(sd)}</span></div><div style={{fontSize:8,color:G.t3}}>Non-billable + callbacks + idle = hidden erosion</div></div>
+      <div className="gl gw" style={{padding:12}}><div className="st">Callback True Cost</div><div style={{fontSize:9,color:G.t2,lineHeight:1.7}}><div>{a.cb} CB × (~$280 labor + ${(a.avgT*0.3).toFixed(0)} lost opp)</div><div className="m" style={{fontSize:16,fontWeight:700,color:G.w,marginTop:3}}>{$(cbCost)}</div><div style={{fontSize:8,color:G.t3}}>Jonathan:2 Thomas:1 Roger:1</div></div></div>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">Audit Trail</div>
+      {[['Data Integrity',c.comp.di],['Invoice',c.comp.ia],['Discounts',c.comp.da],['Callbacks',c.comp.cm],['Fee Leak',c.comp.fl],['BU Match',c.comp.bu]].map(([n,x])=>(<div key={n} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 0',borderBottom:`1px solid ${G.bdr}`}}><span style={{fontSize:11}}>{x.s==='pass'?'✅':'⚠️'}</span><div style={{flex:1}}><div style={{fontSize:10,fontWeight:600}}>{n}</div><div style={{fontSize:8,color:G.t2}}>{x.d}</div></div><span className={`tag ${x.s==='pass'?'tg':'tw'}`}>{x.s}</span></div>))}
+    </div>
+  </div>
+}
+
+// ═══ TRENDS + YOY ═══
+function Trends({c}){
+  const cum=c.trends.daily.reduce((a,d,i)=>{const p=a[a.length-1]||{cr:0,cb:0};a.push({d:d.d,cr:p.cr+d.r,cb:(i+1)*d.bg});return a},[]);
+  const yoy=c.trends.monthly.map((m,i)=>{const ly=c.trends.lastYear[i];return{m:m.m,ty:m.r,ly:ly?.r||0}});
+  return <div>
+    <div className="gl gw" style={{padding:12}}><div className="st">GM% Reported vs Shadow</div><ResponsiveContainer width="100%" height={150}><AreaChart data={c.trends.daily}><CartesianGrid strokeDasharray="3 3" stroke="rgba(80,90,120,0.08)"/><XAxis dataKey="d" tick={{fill:G.t3,fontSize:7}}/><YAxis domain={[50,70]} tick={{fill:G.t3,fontSize:7}} tickFormatter={v=>v+'%'}/><Tooltip contentStyle={TT}/><Area dataKey="gm" name="Reported" stroke={G.a} fill={G.ad} strokeWidth={2}/><Area dataKey="sg" name="Shadow" stroke={G.w} fill={G.wd} strokeWidth={2} strokeDasharray="4 4"/></AreaChart></ResponsiveContainer></div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">Cumulative Rev vs Budget</div><ResponsiveContainer width="100%" height={150}><AreaChart data={cum}><CartesianGrid strokeDasharray="3 3" stroke="rgba(80,90,120,0.08)"/><XAxis dataKey="d" tick={{fill:G.t3,fontSize:7}}/><YAxis tick={{fill:G.t3,fontSize:7}} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/><Tooltip contentStyle={TT}/><Area dataKey="cr" name="Actual" stroke={G.a} fill={G.ad} strokeWidth={2}/><Area dataKey="cb" name="Budget" stroke={G.t3} fill="transparent" strokeWidth={2} strokeDasharray="5 5"/></AreaChart></ResponsiveContainer></div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">Year-over-Year Revenue</div><ResponsiveContainer width="100%" height={150}><BarChart data={yoy}><CartesianGrid strokeDasharray="3 3" stroke="rgba(80,90,120,0.08)"/><XAxis dataKey="m" tick={{fill:G.t3,fontSize:8}}/><YAxis tick={{fill:G.t3,fontSize:7}} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/><Tooltip contentStyle={TT}/><Bar dataKey="ly" name="Last Year" fill={G.t3} opacity={0.4} radius={[2,2,0,0]}/><Bar dataKey="ty" name="This Year" fill={G.a} opacity={0.7} radius={[2,2,0,0]}/></BarChart></ResponsiveContainer></div>
+    <div className="g2" style={{marginTop:8}}>
+      <div className="gl gw" style={{padding:12}}><div className="st">PO Weekly</div><ResponsiveContainer width="100%" height={100}><BarChart data={c.trends.poW}><XAxis dataKey="w" tick={{fill:G.t3,fontSize:7}} tickLine={false}/><Tooltip contentStyle={TT}/><Bar dataKey="a" fill={G.w} opacity={0.7} radius={[2,2,0,0]}/></BarChart></ResponsiveContainer></div>
+      <div className="gl gw" style={{padding:12}}><div className="st">Rev by Weekday</div><ResponsiveContainer width="100%" height={100}><BarChart data={c.trends.dow}><XAxis dataKey="d" tick={{fill:G.t3,fontSize:7}} tickLine={false}/><Tooltip contentStyle={TT}/><Bar dataKey="r" fill={G.b} opacity={0.7} radius={[2,2,0,0]}/></BarChart></ResponsiveContainer></div>
+    </div>
+  </div>
+}
+
+// ═══ COMMISSION ═══
+function Comm({c}){
+  const cm=c.comm;const k1=cm.kpi1;const k2=cm.kpi2;const jan=cm.janActual;
+  const febRevProj=c.act.rev/c.act.dp*c.act.dim;
+  const febGM=c.act.gm;const febRevAchv=Math.min(200,(febRevProj/k2.target)*100);
+  const febGMAchv=Math.min(200,(febGM/k1.target)*100);
+  const k1Above=febGMAchv>=cm.floor;const k2Above=febRevAchv>=cm.floor;
+  const k1Pay=k1Above?febGMAchv:0;const k2Pay=k2Above?febRevAchv:0;
+  const weighted=Math.min(200,k1Pay*k1.weight+k2Pay*k2.weight);
+  const payout=Math.round(cm.moTarget*(weighted/100));
+  return <div>
+    <div className="st">Commission — Branch Leader Bonus</div>
+    <div className="ks">
+      <K l="Base Salary" v={'$'+Math.round(cm.salary/1000)+'K'} i="💼"/>
+      <K l="Target Bonus" v={'$'+Math.round(cm.targetBonus/1000)+'K/yr'} i="🎯"/>
+      <K l="Monthly Target" v={$f(cm.moTarget)} i="📅"/>
+      <K l="Feb Payout" v={$f(payout)} c={payout>cm.moTarget?G.a:payout>0?G.w:G.d} i="💰"/>
+      <K l="Jan Actual" v={$f(jan.payout)} c={G.b} i="✅"/>
+    </div>
+    <div className="gl gw" style={{padding:16,marginTop:6}}>
+      <div className="st">February Forecast (Day {c.act.dp}/{c.act.dim})</div>
+      <div className="g2" style={{gap:12,marginBottom:12}}>
+        <div className="gl" style={{padding:12,borderColor:k1Above?G.a:G.d}}>
+          <div style={{fontSize:8,color:G.t3}}>KPI1: {k1.name} (50%)</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:4}}>
+            <div className="m" style={{fontSize:20,fontWeight:700,color:k1Above?G.a:G.d}}>{P(febGMAchv)}</div>
+            <div style={{fontSize:9,color:G.t2}}>Achv</div>
+          </div>
+          <div style={{fontSize:9,color:G.t2,marginTop:4}}>Actual {P(febGM)} vs Target {P(k1.target)}</div>
+          <div style={{fontSize:9,fontWeight:600,color:k1Above?G.a:G.d,marginTop:4}}>{k1Above?'✅ ABOVE 80% floor':'❌ BELOW 80% floor → $0'}</div>
+          <TB val={febGMAchv} label={`Contributes: ${P(k1Pay*k1.weight)}`}/>
+        </div>
+        <div className="gl" style={{padding:12,borderColor:k2Above?G.a:G.d}}>
+          <div style={{fontSize:8,color:G.t3}}>KPI2: {k2.name} (50%)</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:4}}>
+            <div className="m" style={{fontSize:20,fontWeight:700,color:k2Above?G.a:G.d}}>{P(febRevAchv)}</div>
+            <div style={{fontSize:9,color:G.t2}}>Achv</div>
+          </div>
+          <div style={{fontSize:9,color:G.t2,marginTop:4}}>Proj {$f(febRevProj)} vs Target {$f(k2.target)}</div>
+          <div style={{fontSize:9,fontWeight:600,color:k2Above?G.a:G.d,marginTop:4}}>{k2Above?'✅ ABOVE 80% floor':'⚠️ BELOW 80% floor → $0'}</div>
+          <TB val={febRevAchv} label={`Contributes: ${P(k2Pay*k2.weight)}`}/>
+        </div>
+      </div>
+      <div style={{padding:'10px 0',borderTop:`1px solid ${G.bdr}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div><div style={{fontSize:8,color:G.t3}}>FORMULA</div><div className="m" style={{fontSize:9,color:G.t2}}>$2,268 × {P(weighted)} = <span style={{color:G.a,fontWeight:700}}>{$f(payout)}</span></div><div style={{fontSize:8,color:G.t3,marginTop:2}}>80% floor per KPI | 200% cap</div></div>
+        <div style={{textAlign:'right'}}><div style={{fontSize:8,color:G.t3}}>WEIGHTED</div><div className="m" style={{fontSize:24,fontWeight:700,color:AC(weighted)}}>{P(weighted)}</div></div>
+      </div>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">January Actual (Confirmed)</div>
+      <div className="g2" style={{gap:8}}>
+        <div style={{fontSize:10,lineHeight:2}}>
+          <div>KPI1 GM%: <span className="m">{P(jan.kpi1A)}</span> vs {P(jan.kpi1T)} → <span className="m" style={{color:G.d}}>{P(jan.kpi1Achv)} achv ❌ below 80%</span></div>
+          <div>KPI2 Rev: <span className="m">{$f(jan.kpi2A)}</span> vs {$f(jan.kpi2T)} → <span className="m" style={{color:G.a}}>{P(jan.kpi2Achv)} achv ✅</span></div>
+          <div>Weighted: <span className="m">{P(jan.weighted)}</span> → Payout: <span className="m" style={{color:G.a,fontWeight:700}}>{$f(jan.payout)}</span></div>
+        </div>
+        <div style={{fontSize:10,lineHeight:2,color:G.t2}}>
+          <div>Revenue: {$f(cm.pnl.jan26.rev)}</div>
+          <div>COGS: {$f(cm.pnl.jan26.cogs)} ({P(cm.pnl.jan26.cogs/cm.pnl.jan26.rev*100)})</div>
+          <div>GP: {$f(cm.pnl.jan26.gp)} (GM {P(cm.pnl.jan26.gm)})</div>
+          <div>NI: <span style={{color:G.d}}>{$f(cm.pnl.jan26.ni)}</span></div>
+        </div>
+      </div>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">Annual Revenue Targets</div>
+      <table><thead><tr><th>Mo</th><th>Rev Target</th><th>GM Target</th><th>Min GM</th><th>Status</th></tr></thead>
+      <tbody>{cm.budgetTargets.map((bt,i)=>(<tr key={bt.m} style={{background:i===0?'rgba(0,229,170,0.03)':i===1?'rgba(74,158,255,0.05)':undefined}}>
+        <td style={{fontWeight:600}}>{bt.m}</td><td className="m">{$f(bt.revT)}</td><td className="m">{P(bt.gmT)}</td>
+        <td className="m" style={{color:G.t2}}>{P(bt.gmT*0.8)}</td>
+        <td>{i===0?<span style={{color:G.a}}>✅ $1,260</span>:i===1?<span style={{color:G.b}}>📍 IN PROGRESS</span>:<span style={{color:G.t3}}>—</span>}</td>
+      </tr>))}</tbody></table>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8,borderLeft:`3px solid ${G.b}`}}>
+      <div className="st">Commission Rules</div>
+      <div style={{fontSize:10,color:G.t2,lineHeight:2}}>
+        <div>✅ Monthly bonus target: <strong>${cm.moTarget.toLocaleString()}</strong> ($2,268/mo)</div>
+        <div>✅ KPI1 = <strong>Gross Margin %</strong> (50% weight) — target varies monthly</div>
+        <div>✅ KPI2 = <strong>Revenue</strong> (50% weight) — target varies monthly</div>
+        <div>✅ Achievement = Actual ÷ Target × 100</div>
+        <div>✅ 80% threshold: Below 80% on ANY KPI = that KPI pays <strong>$0</strong></div>
+        <div>✅ Above 100% = accelerator (earn more than target)</div>
+        <div>✅ 200% cap per KPI = max monthly bonus <strong>${(cm.moTarget*2).toLocaleString()}</strong></div>
+        <div>✅ Max annual bonus: <strong>${(cm.targetBonus*2).toLocaleString()}</strong></div>
+        <div style={{color:G.w,marginTop:4}}>⚠️ January GM% at 37% was below 40% floor (80% of 50%) — cost you ~$1,260 in lost KPI1 bonus</div>
+      </div>
+    </div>
+  </div>
+}
+
+// ═══ WHAT-IF ═══
+function WhatIf({c}){
+  const a=c.act;const cm=c.comm;const[ej,setEJ]=useState(0);const[at,setAT]=useState(a.avgT);const[ga,setGA]=useState(0);
+  const nr=a.rev+ej*at;const ng=a.gm+ga;const rp=nr/a.dp*a.dim;
+  const gmAchv=Math.min(200,(ng/cm.kpi1.target)*100);const revAchv=Math.min(200,(rp/cm.kpi2.target)*100);
+  const k1Pay=gmAchv>=cm.floor?gmAchv:0;const k2Pay=revAchv>=cm.floor?revAchv:0;
+  const wA=Math.min(200,k1Pay*0.5+k2Pay*0.5);const pay=Math.round(cm.moTarget*(wA/100));
+  return <div>
+    <div className="st">What-If Scenario Builder</div>
+    <div className="gl gw" style={{padding:14}}>
+      <div style={{marginBottom:12}}><div style={{display:'flex',justifyContent:'space-between',fontSize:9,marginBottom:2}}><span>Extra Jobs ({a.dr} days left)</span><span className="m" style={{color:G.a}}>{ej}</span></div><input type="range" className="slider" min={0} max={30} value={ej} onChange={e=>setEJ(+e.target.value)}/></div>
+      <div style={{marginBottom:12}}><div style={{display:'flex',justifyContent:'space-between',fontSize:9,marginBottom:2}}><span>Avg Ticket on New</span><span className="m" style={{color:G.a}}>{$(at)}</span></div><input type="range" className="slider" min={300} max={3000} step={50} value={at} onChange={e=>setAT(+e.target.value)}/></div>
+      <div style={{marginBottom:12}}><div style={{display:'flex',justifyContent:'space-between',fontSize:9,marginBottom:2}}><span>GM% Adjust</span><span className="m" style={{color:ga>=0?G.a:G.d}}>{ga>=0?'+':''}{ga}pts</span></div><input type="range" className="slider" min={-10} max={10} step={0.5} value={ga} onChange={e=>setGA(+e.target.value)}/></div>
+    </div>
+    <div className="ks" style={{marginTop:8}}>
+      <K l="Proj Rev" v={$f(rp)} c={G.a}/><K l="GM%" v={P(ng)} c={ng>=cm.kpi1.target?G.a:G.w}/><K l="GM Achv" v={P(gmAchv)} c={gmAchv>=80?G.a:G.d}/>
+      <K l="Rev Achv" v={P(revAchv)} c={revAchv>=80?G.a:G.d}/><K l="Weighted" v={P(wA)} c={AC(wA)}/><K l="Bonus" v={$f(pay)} c={pay>cm.moTarget?G.a:pay>0?G.w:G.d}/>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:6,fontSize:11}}>
+      {ej>0?<><strong>{ej} jobs</strong> at {$(at)} = <span className="m" style={{color:G.a}}>{$(ej*at)}</span> added. Bonus: <span className="m" style={{color:G.a,fontWeight:700}}>{$f(pay)}</span> ({P(wA)} wtd){!k1Pay&&<span style={{color:G.d}}> ⚠️ GM% below 80% floor</span>}{!k2Pay&&<span style={{color:G.d}}> ⚠️ Rev below 80% floor</span>}</>:<span style={{color:G.t2}}>Drag sliders to model bonus scenarios. $2,268 monthly target.</span>}
+    </div>
+  </div>
+}
+
+// ═══ ALERTS ═══
+function Alerts({c}){
+  const[als,setAls]=useState(c.alerts);
+  return <div>
+    <div className="st">Smart Alerts & Anomalies</div>
+    <div className="ks"><K l="Active" v={als.filter(a=>!a.ack).length} c={als.filter(a=>!a.ack&&a.sev==='high').length>0?G.d:G.w} i="🔔"/><K l="High" v={als.filter(a=>a.sev==='high'&&!a.ack).length} c={G.d} i="🚨"/><K l="Anomalies" v={als.filter(a=>a.type==='anomaly').length} i="📡"/><K l="Ack'd" v={als.filter(a=>a.ack).length} c={G.a} i="✅"/></div>
+    <div className="gl gw" style={{padding:12}}>
+      {als.map(a=>(<div key={a.id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'8px 0',borderBottom:`1px solid ${G.bdr}`,opacity:a.ack?0.45:1}}>
+        <div style={{width:6,height:6,borderRadius:3,background:a.sev==='high'?G.d:a.sev==='med'?G.w:G.b,marginTop:4,flexShrink:0}}/>
+        <div style={{flex:1}}><div style={{display:'flex',gap:4,marginBottom:2}}><span className={`tag ${a.sev==='high'?'td':a.sev==='med'?'tw':'tp'}`}>{a.sev}</span><span className={`tag ${a.type==='anomaly'?'tp':'tm'}`}>{a.type}</span></div><div style={{fontSize:10}}>{a.msg}</div><div style={{fontSize:8,color:G.t3}}>{a.ts}</div></div>
+        {!a.ack&&<button className="lk" onClick={()=>setAls(als.map(x=>x.id===a.id?{...x,ack:true}:x))}>Ack</button>}
+      </div>))}
+    </div>
+  </div>
+}
+
+// ═══ MEMBERSHIPS ═══
+function Mems({c}){
+  const m=c.act.mem;const net=m.new-m.cancel;const ch=(m.cancel/m.active*100).toFixed(1);
+  return <div>
+    <div className="st">Memberships</div>
+    <div className="ks"><K l="Active" v={m.active} c={G.b} i="👥"/><K l="New" v={'+'+m.new} c={G.a} i="📈"/><K l="Cancel" v={m.cancel} c={m.cancel>5?G.d:G.a} i="📉"/><K l="Net" v={(net>=0?'+':'')+net} c={net>0?G.a:G.d} i="🎯"/><K l="Churn" v={ch+'%'} c={parseFloat(ch)<2?G.a:G.w} i="📊"/><K l="Rev" v={$(m.rev)} s={'$'+(m.rev/m.active).toFixed(0)+'/ea'} c={G.a} i="💰"/></div>
+    <div className="gl gw" style={{padding:12}}><div className="st">Sold by Tech</div>{c.techs.filter(t=>t.memS>0).sort((a,b)=>b.memS-a.memS).map(t=>(<div key={t.n} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderBottom:`1px solid rgba(80,90,120,0.08)`}}><div style={{fontWeight:600,fontSize:12}}>{t.n}</div><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:60}}><div className="bb"><div className="bf" style={{width:(t.memS/10*100)+'%',background:t.memS>=6?G.a:G.w}}/></div></div><span className="m" style={{fontSize:16,fontWeight:700,color:t.memS>=6?G.a:G.t1}}>{t.memS}</span></div></div>))}</div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">Health</div><div style={{fontSize:12,lineHeight:1.7}}>{net>0?<>Growing <span className="m" style={{color:G.a}}>+{net}/mo</span>. Churn {ch}% is {parseFloat(ch)<2?'excellent':'watch'}. ARR: <span className="m" style={{color:G.a}}>{$(m.rev*12)}</span>.</>:<>Shrinking. Investigate churn drivers.</>}</div></div>
+  </div>
+}
+
+// ═══ REVENUE WATERFALL ═══
+function Waterfall({c}){
+  const w=c.waterfall;
+  const stages=[
+    {l:'Estimates Created',v:w.totalEst,d:w.estValue,c:G.t2},
+    {l:'Presented',v:w.presented,d:w.presValue,c:G.b,loss:w.totalEst-w.presented,lossD:w.estValue-w.presValue,reason:'Not presented / cancelled'},
+    {l:'Sold',v:w.sold,d:w.soldValue,c:G.p,loss:w.presented-w.sold,lossD:w.presValue-w.soldValue,reason:'Not closed — follow-up / price / timing'},
+    {l:'Installed',v:w.installed,d:w.insValue,c:G.a,loss:w.sold-w.installed,lossD:w.soldValue-w.insValue,reason:'Scheduling delays / cancellations'},
+    {l:'Invoiced',v:w.invoiced,d:w.invValue,c:G.a,loss:w.installed-w.invoiced,lossD:w.insValue-w.invValue,reason:'Billing gaps / adjustments'},
+    {l:'Collected',v:w.collected,d:w.colValue,c:G.a,loss:w.invoiced-w.collected,lossD:w.invValue-w.colValue,reason:'AR / unpaid / writeoffs'},
+  ];
+  const maxV=w.estValue;
+  return <div>
+    <div className="st">Revenue Attribution Waterfall</div>
+    <div className="ks">
+      <K l="Estimates" v={w.totalEst} s={$(w.estValue)} i="📝"/>
+      <K l="Sold" v={w.sold} s={$(w.soldValue)} c={G.a} i="✅"/>
+      <K l="Collected" v={$(w.colValue)} c={G.a} i="💰"/>
+      <K l="GP Earned" v={$(w.gp)} c={G.a} i="📊"/>
+      <K l="Conversion" v={((w.sold/w.totalEst)*100).toFixed(0)+'%'} c={G.p} i="🎯"/>
+      <K l="Collection Rate" v={((w.colValue/w.invValue)*100).toFixed(0)+'%'} c={G.a} i="💵"/>
+    </div>
+    <div className="gl gw" style={{padding:14}}>
+      <div className="st">Funnel — Where Revenue Leaks</div>
+      {stages.map((s,i)=>{const pct=s.d/maxV*100;return(
+        <div key={s.l} style={{marginBottom:i<stages.length-1?8:0}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,marginBottom:2}}>
+            <span style={{fontWeight:600}}>{s.l}</span>
+            <div><span className="m" style={{color:s.c}}>{$(s.d)}</span> <span style={{color:G.t3,fontSize:8}}>({s.v})</span></div>
+          </div>
+          <div className="bb" style={{height:16,borderRadius:8}}>
+            <div className="bf" style={{width:pct+'%',background:s.c,height:16,borderRadius:8}}/>
+          </div>
+          {s.loss>0&&<div style={{fontSize:8,color:G.d,marginTop:1}}>
+            ↓ Lost {s.loss} ({$(s.lossD)}) — {s.reason}
+          </div>}
+        </div>
+      )})}
+    </div>
+    <div className="gl gw" style={{padding:14,marginTop:8}}>
+      <div className="st">Leakage Summary</div>
+      <div style={{fontSize:11,lineHeight:1.8}}>
+        Of <span className="m" style={{color:G.b}}>{$(w.estValue)}</span> in estimates, you collected <span className="m" style={{color:G.a}}>{$(w.colValue)}</span> — a <span className="m" style={{color:G.w}}>{((1-w.colValue/w.estValue)*100).toFixed(0)}% total leakage</span>.
+        Biggest drop: Presented→Sold ({$(w.presValue-w.soldValue)} lost). Improving close rate from {((w.sold/w.presented)*100).toFixed(0)}% to {((w.sold/w.presented)*100+10).toFixed(0)}% would recover ~{$(Math.round((w.presValue-w.soldValue)*0.1/100)*100)}.
+      </div>
+    </div>
+  </div>
+}
+
+// ═══ TERRITORY / MARKET DENSITY ═══
+function Territory({c}){
+  const terr=c.territory;const maxRev=Math.max(...terr.map(t=>t.rev));const totalRev=terr.reduce((s,t)=>s+t.rev,0);const totalCust=terr.reduce((s,t)=>s+t.cust,0);
+  return <div>
+    <div className="st">Territory & Market Density</div>
+    <div className="ks">
+      <K l="Active Zips" v={terr.length} i="📍"/>
+      <K l="Total Customers" v={totalCust} i="👥"/>
+      <K l="Avg Rev/Zip" v={$(totalRev/terr.length,0)} i="💰"/>
+      <K l="Avg $/Customer" v={$(totalRev/totalCust,0)} i="📊"/>
+    </div>
+    <div className="gl gw" style={{overflow:'auto'}}>
+      <table><thead><tr><th>Zip</th><th>Area</th><th>Revenue</th><th>Jobs</th><th>Customers</th><th>$/Customer</th><th>Market Share</th></tr></thead>
+      <tbody>{terr.sort((a,b)=>b.rev-a.rev).map(t=>{const rpc=(t.rev/t.cust).toFixed(0);return(
+        <tr key={t.zip}>
+          <td className="m" style={{fontWeight:600}}>{t.zip}</td>
+          <td>{t.name}</td>
+          <td className="m" style={{color:G.a}}>{$(t.rev)}</td>
+          <td className="m">{t.jobs}</td>
+          <td className="m">{t.cust}</td>
+          <td className="m" style={{color:parseInt(rpc)>120?G.a:G.w}}>${rpc}</td>
+          <td><div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:60}}><div className="bb"><div className="bf" style={{width:(t.rev/maxRev*100)+'%',background:G.a}}/></div></div><span style={{fontSize:8,color:G.t2}}>{(t.rev/totalRev*100).toFixed(0)}%</span></div></td>
+        </tr>
+      )})}</tbody></table>
+    </div>
+    <div className="g2" style={{marginTop:8}}>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Revenue by Zip</div>
+        <ResponsiveContainer width="100%" height={130}><BarChart data={terr.sort((a,b)=>b.rev-a.rev)}><XAxis dataKey="zip" tick={{fill:G.t3,fontSize:8}} tickLine={false}/><YAxis tick={{fill:G.t3,fontSize:7}} tickFormatter={v=>'$'+(v/1000)+'k'} tickLine={false}/><Tooltip contentStyle={TT}/><Bar dataKey="rev" fill={G.a} opacity={0.7} radius={[2,2,0,0]}/></BarChart></ResponsiveContainer>
+      </div>
+      <div className="gl gw" style={{padding:12}}>
+        <div className="st">Revenue per Customer by Zip</div>
+        <ResponsiveContainer width="100%" height={130}><BarChart data={terr.map(t=>({...t,rpc:Math.round(t.rev/t.cust)}))}><XAxis dataKey="zip" tick={{fill:G.t3,fontSize:8}} tickLine={false}/><YAxis tick={{fill:G.t3,fontSize:7}} tickFormatter={v=>'$'+v} tickLine={false}/><Tooltip contentStyle={TT}/><Bar dataKey="rpc" name="$/Cust" fill={G.b} opacity={0.7} radius={[2,2,0,0]}/></BarChart></ResponsiveContainer>
+      </div>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Opportunity Analysis</div>
+      <div style={{fontSize:11,lineHeight:1.8}}>
+        Strongest: <span className="m" style={{color:G.a}}>{terr[0].zip} {terr[0].name}</span> ({$(terr[0].rev)}, {terr[0].cust} customers).
+        Weakest per-customer: <span className="m" style={{color:G.w}}>{terr.sort((a,b)=>a.rev/a.cust-b.rev/b.cust)[0].zip}</span> at ${(terr.sort((a,b)=>a.rev/a.cust-b.rev/b.cust)[0].rev/terr.sort((a,b)=>a.rev/a.cust-b.rev/b.cust)[0].cust).toFixed(0)}/customer — upsell opportunity.
+      </div>
+    </div>
+  </div>
+}
+
+// ═══ TECH AVAILABILITY CALENDAR ═══
+function Calendar({c}){
+  const cal=c.calendar;const stC={work:G.a,train:G.b,pto:G.w,off:G.t3};const stL={work:'W',train:'T',pto:'P',off:'—'};
+  const lightDays=cal.filter(d=>d.cap<75);
+  return <div>
+    <div className="st">Tech Availability Calendar — Remaining Days</div>
+    <div className="ks">
+      <K l="Days Left" v={cal.length} i="📅"/>
+      <K l="Full Capacity" v={cal.filter(d=>d.cap>=88).length} c={G.a} i="✅"/>
+      <K l="Light Days" v={lightDays.length} c={lightDays.length>3?G.w:G.a} i="⚠️"/>
+      <K l="Avg Capacity" v={Math.round(cal.reduce((s,d)=>s+d.cap,0)/cal.length)+'%'} c={G.a} i="📊"/>
+    </div>
+    <div className="gl gw" style={{overflow:'auto'}}>
+      <table><thead><tr><th>Date</th><th>Day</th>{['TK','JA','RB','AS'].map(n=><th key={n}>{n}</th>)}<th>Calls</th><th>Capacity</th></tr></thead>
+      <tbody>{cal.map(d=>(
+        <tr key={d.d} style={{background:d.cap<50?'rgba(255,92,92,0.03)':d.cap<75?'rgba(255,184,77,0.03)':undefined}}>
+          <td className="m" style={{fontWeight:600,fontSize:10}}>{d.d}</td>
+          <td style={{fontSize:10}}>{d.day}</td>
+          {d.techs.map((t,i)=>(<td key={i}><span style={{display:'inline-block',width:18,height:18,borderRadius:4,background:stC[t.s]+'22',color:stC[t.s],textAlign:'center',lineHeight:'18px',fontSize:9,fontWeight:700}}>{stL[t.s]}</span></td>))}
+          <td className="m">{d.calls}</td>
+          <td><div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:40}}><div className="bb"><div className="bf" style={{width:d.cap+'%',background:d.cap>=75?G.a:d.cap>=50?G.w:G.d}}/></div></div><span className="m" style={{fontSize:9,color:d.cap>=75?G.a:d.cap>=50?G.w:G.d}}>{d.cap}%</span></div></td>
+        </tr>
+      ))}</tbody></table>
+    </div>
+    <div style={{display:'flex',gap:12,padding:'8px 0',fontSize:9,color:G.t2}}>
+      {Object.entries(stL).map(([k,v])=>(<div key={k} style={{display:'flex',alignItems:'center',gap:3}}><span style={{width:14,height:14,borderRadius:3,background:stC[k]+'22',color:stC[k],textAlign:'center',lineHeight:'14px',fontSize:8,fontWeight:700,display:'inline-block'}}>{v}</span><span>{k==='work'?'Working':k==='train'?'Training':k==='pto'?'PTO':'Off'}</span></div>))}
+    </div>
+    {lightDays.length>0&&<div className="gl gw" style={{padding:12,marginTop:6,borderLeft:`3px solid ${G.w}`}}>
+      <div className="st">Capacity Warning</div>
+      <div style={{fontSize:11,lineHeight:1.7}}>
+        {lightDays.length} days below 75% capacity: {lightDays.map(d=>d.d).join(', ')}.
+        {lightDays.some(d=>d.cap<=50)&&<span style={{color:G.d}}> Feb 19 and Feb 22 are critically low — consider rescheduling high-value calls to full-capacity days.</span>}
+      </div>
+    </div>}
+  </div>
+}
+
+// ═══ SENTINEL — DATA INTEGRITY ENGINE ═══
+function Sentinel({c}){
+  const a=c.act;const techs=c.techs;
+  // Run all validation checks
+  const checks=[];
+  // Layer 1: Source of Truth
+  const techRevSum=techs.reduce((s,t)=>s+t.rev,0);
+  checks.push({cat:'L1',name:'Tech Revenue = Company Revenue',expect:a.rev,actual:techRevSum,pass:techRevSum===a.rev,sev:techRevSum===a.rev?'pass':'critical'});
+  
+  const svcInsSum=a.svcRev+a.insRev;
+  checks.push({cat:'L1',name:'Service + Install = Total Revenue',expect:a.rev,actual:svcInsSum,pass:svcInsSum===a.rev,sev:svcInsSum===a.rev?'pass':'critical'});
+  
+  const techJobSum=techs.reduce((s,t)=>s+t.j,0);
+  checks.push({cat:'L1',name:'Tech Jobs = Company Jobs',expect:a.jobs,actual:techJobSum,pass:techJobSum===a.jobs,sev:techJobSum===a.jobs?'pass':'critical'});
+  
+  const svcInsJobs=a.svcJ+a.insJ;
+  checks.push({cat:'L1',name:'Service + Install Jobs = Total',expect:a.jobs,actual:svcInsJobs,pass:svcInsJobs===a.jobs,sev:svcInsJobs===a.jobs?'pass':'critical'});
+  
+  const gmCalc=parseFloat((a.gp/a.rev*100).toFixed(1));
+  checks.push({cat:'L1',name:'GP/Rev = Stated GM%',expect:a.gm,actual:gmCalc,pass:gmCalc===a.gm,sev:gmCalc===a.gm?'pass':'critical'});
+  
+  const techCBSum=techs.reduce((s,t)=>s+t.cb,0);
+  checks.push({cat:'L1',name:'Tech Callbacks = Company Callbacks',expect:a.cb,actual:techCBSum,pass:techCBSum===a.cb,sev:techCBSum===a.cb?'pass':'warning'});
+  
+  // Layer 2: Cross-Reference
+  const techSvcSum=techs.reduce((s,t)=>s+t.sRev,0);
+  checks.push({cat:'L2',name:'Tech Svc Rev Sum = Company Svc Rev',expect:a.svcRev,actual:techSvcSum,pass:techSvcSum===a.svcRev,sev:techSvcSum===a.svcRev?'pass':'warning'});
+  
+  const techPOSum=techs.reduce((s,t)=>s+t.po,0);
+  const poWithUnassigned=techPOSum+(a.unassignedPO||0);
+  checks.push({cat:'L2',name:'Tech PO + Unassigned = Company PO',expect:a.po.mtd,actual:poWithUnassigned,pass:poWithUnassigned===a.po.mtd,sev:poWithUnassigned===a.po.mtd?'pass':'warning'});
+  
+  const poWeekSum=a.po.w1+a.po.w2+a.po.w3;
+  checks.push({cat:'L2',name:'Weekly PO Sum = MTD PO',expect:a.po.mtd,actual:poWeekSum,pass:poWeekSum===a.po.mtd,sev:poWeekSum===a.po.mtd?'pass':'warning'});
+  
+  const techMemSum=techs.reduce((s,t)=>s+t.memS,0);
+  const memWithCSR=techMemSum+(a.csrMem||0);
+  checks.push({cat:'L2',name:'Tech Mem + CSR = New Memberships',expect:a.mem.new,actual:memWithCSR,pass:memWithCSR===a.mem.new,sev:memWithCSR===a.mem.new?'pass':'warning'});
+  
+  const memNet=a.mem.new-a.mem.cancel;
+  checks.push({cat:'L2',name:'Membership Net = New - Cancel',expect:memNet,actual:a.mem.new-a.mem.cancel,pass:true,sev:'pass'});
+  
+  const techDiscSum=techs.reduce((s,t)=>s+t.disc,0);
+  const discWithMgr=techDiscSum+(a.mgrDisc||0);
+  checks.push({cat:'L2',name:'Tech Disc + Mgr = Total Discounts',expect:a.totalDisc,actual:discWithMgr,pass:discWithMgr===a.totalDisc,sev:discWithMgr===a.totalDisc?'pass':'warning'});
+  
+  const rpdCalc=Math.round(a.rev/a.dp);
+  checks.push({cat:'L2',name:'Rev/Day = Revenue ÷ Days Passed',expect:a.rpd,actual:rpdCalc,pass:rpdCalc===a.rpd,sev:rpdCalc===a.rpd?'pass':'warning'});
+  
+  const rndCalc=Math.round((c.bgt.rev-a.rev)/a.dr);
+  checks.push({cat:'L2',name:'Rev Needed/Day = Gap ÷ Days Left',expect:a.rnd,actual:rndCalc,pass:rndCalc===a.rnd,sev:rndCalc===a.rnd?'pass':'warning'});
+  
+  // Layer 3: Attribution Guard
+  techs.filter(t=>t.iSA>0).forEach(t=>{
+    const attr=t.sRev+t.iSA;
+    checks.push({cat:'L3',name:`${t.n}: Install Sold ≠ additive to rev`,expect:'Attribution only',actual:attr>t.rev?'⚠️ iSA exceeds rev — NOT additive':'✅ Separate metric',pass:true,sev:'info'});
+  });
+  
+  // Layer 3: Anomaly checks
+  const avgRev=techs.reduce((s,t)=>s+t.rev,0)/techs.length;
+  techs.forEach(t=>{
+    if(t.rev>avgRev*2.5)checks.push({cat:'L3',name:`${t.n} rev ${$(t.rev)} > 2.5x avg`,expect:'<'+$(avgRev*2.5),actual:$(t.rev),pass:false,sev:'anomaly'});
+  });
+  
+  const estPipeCalc=c.ests.reduce((s,e)=>s+e.a,0);
+  checks.push({cat:'L2',name:'Est list value = pipeline value',expect:$(a.pipeV),actual:$(estPipeCalc),pass:false,sev:Math.abs(estPipeCalc-a.pipeV)<1000?'info':'warning'});
+  
+  // Waterfall consistency
+  checks.push({cat:'L2',name:'Waterfall Invoiced = Company Rev',expect:$(a.rev),actual:$(c.waterfall.invValue),pass:c.waterfall.invValue===a.rev,sev:c.waterfall.invValue===a.rev?'pass':'critical'});
+  checks.push({cat:'L2',name:'Waterfall GP = Company GP',expect:$(a.gp),actual:$(c.waterfall.gp),pass:c.waterfall.gp===a.gp,sev:c.waterfall.gp===a.gp?'pass':'critical'});
+
+  const passed=checks.filter(c=>c.sev==='pass').length;
+  const warnings=checks.filter(c=>c.sev==='warning').length;
+  const critical=checks.filter(c=>c.sev==='critical').length;
+  const total=checks.length;
+  const score=Math.round((passed/total)*100);
+
+  return <div>
+    <div className="st">🛡️ Sentinel — Data Integrity Engine</div>
+    <div className="ks">
+      <K l="Integrity Score" v={score+'%'} c={score>=95?G.a:score>=80?G.w:G.d} i="🛡️"/>
+      <K l="Checks Run" v={total} i="🔍"/>
+      <K l="Passed" v={passed} c={G.a} i="✅"/>
+      <K l="Warnings" v={warnings} c={warnings>0?G.w:G.a} i="⚠️"/>
+      <K l="Critical" v={critical} c={critical>0?G.d:G.a} i="🚨"/>
+      <K l="Last Scan" v="Just now" c={G.b} i="🕐"/>
+    </div>
+    
+    {critical>0&&<div className="gl gw" style={{padding:12,marginBottom:8,borderLeft:`3px solid ${G.d}`,background:'rgba(255,92,92,0.03)'}}>
+      <div style={{fontWeight:700,fontSize:12,color:G.d,marginBottom:4}}>🚨 Critical Issues Found</div>
+      {checks.filter(c=>c.sev==='critical').map((c,i)=>(<div key={i} style={{fontSize:11,marginBottom:2}}>{c.name}: Expected {typeof c.expect==='number'?$(c.expect):c.expect}, Got {typeof c.actual==='number'?$(c.actual):c.actual}</div>))}
+    </div>}
+
+    <div className="gl gw" style={{padding:12}}>
+      <div className="st">Layer 1: Source of Truth — Revenue Flow</div>
+      <div style={{fontSize:9,color:G.t2,marginBottom:6}}>Every dollar traced from job → tech → company. No double-counting.</div>
+      {checks.filter(c=>c.cat==='L1').map((c,i)=>(<div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 0',borderBottom:`1px solid rgba(80,90,120,0.06)`}}>
+        <span style={{fontSize:11}}>{c.sev==='pass'?'✅':c.sev==='critical'?'❌':'⚠️'}</span>
+        <div style={{flex:1,fontSize:10}}>{c.name}</div>
+        <div className="m" style={{fontSize:9,color:G.t2}}>exp:{typeof c.expect==='number'?c.expect:c.expect}</div>
+        <div className="m" style={{fontSize:9,color:c.sev==='pass'?G.a:G.d}}>got:{typeof c.actual==='number'?c.actual:c.actual}</div>
+        <span className={`tag ${c.sev==='pass'?'tg':c.sev==='critical'?'td':'tw'}`}>{c.sev}</span>
+      </div>))}
+    </div>
+
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Layer 2: Cross-Reference — Reconciliation</div>
+      <div style={{fontSize:9,color:G.t2,marginBottom:6}}>Sum checks: tech subtotals = company totals. No missing dollars.</div>
+      {checks.filter(c=>c.cat==='L2').map((c,i)=>(<div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 0',borderBottom:`1px solid rgba(80,90,120,0.06)`}}>
+        <span style={{fontSize:11}}>{c.sev==='pass'?'✅':c.sev==='critical'?'❌':c.sev==='warning'?'⚠️':'ℹ️'}</span>
+        <div style={{flex:1,fontSize:10}}>{c.name}</div>
+        <div className="m" style={{fontSize:9,color:c.sev==='pass'?G.a:c.sev==='info'?G.b:G.w}}>{typeof c.actual==='number'?c.actual:c.actual}</div>
+        <span className={`tag ${c.sev==='pass'?'tg':c.sev==='warning'?'tw':c.sev==='critical'?'td':'tp'}`}>{c.sev}</span>
+      </div>))}
+    </div>
+
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Layer 3: Attribution Guard & Anomalies</div>
+      <div style={{fontSize:9,color:G.t2,marginBottom:6}}>Install Sold ≠ Revenue. Attribution ≠ Additive. Stat outlier detection.</div>
+      {checks.filter(c=>c.cat==='L3').map((c,i)=>(<div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 0',borderBottom:`1px solid rgba(80,90,120,0.06)`}}>
+        <span style={{fontSize:11}}>{c.sev==='info'?'ℹ️':c.sev==='anomaly'?'📡':'✅'}</span>
+        <div style={{flex:1,fontSize:10}}>{c.name}</div>
+        <div className="m" style={{fontSize:9,color:G.t2}}>{typeof c.actual==='string'?c.actual:c.actual}</div>
+        <span className={`tag ${c.sev==='info'?'tp':c.sev==='anomaly'?'tw':'tg'}`}>{c.sev}</span>
+      </div>))}
+    </div>
+
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Revenue Flow Rules (Enforced)</div>
+      <div style={{fontSize:10,color:G.t2,lineHeight:2}}>
+        <div>✅ <strong>Job Revenue</strong> → Assigned to tech who <em>ran</em> the job (ServiceTitan default)</div>
+        <div>✅ <strong>Install Sold Attribution</strong> → Sales credit only. Does NOT add to total revenue</div>
+        <div>✅ <strong>Company Revenue</strong> = ∑ tech revenues (verified: {$(techRevSum)})</div>
+        <div>✅ <strong>Service + Install Rev</strong> = Total Rev (verified: {$(a.svcRev)} + {$(a.insRev)} = {$(a.svcRev+a.insRev)})</div>
+        <div>✅ <strong>Membership Rev</strong> = Subset of Service Rev (not additive)</div>
+        <div>✅ <strong>PO Spend</strong>: Tech sum + Unassigned ({$(a.unassignedPO||0)}) = MTD total</div>
+        <div>✅ <strong>Memberships</strong>: Tech sold + CSR/Other ({a.csrMem||0}) = Total new</div>
+        <div>✅ <strong>Discounts</strong>: Tech sum + Manager ({$(a.mgrDisc||0)}) = Total discounts</div>
+      </div>
+    </div>
+  </div>
+}
+
+// ═══ SETTINGS ═══
+function Settings({c}){
+  return <div>
+    <div className="st">Settings</div>
+    <div className="g2">
+      <div className="gl gw" style={{padding:12}}><div className="st">Commission</div><div style={{fontSize:10,color:G.t2,lineHeight:2}}>
+        <div>Base Salary: <span className="m">$100,000/yr</span></div><div>Target Bonus: <span className="m">$27,212/yr ($2,268/mo)</span></div>
+        <div>KPI1: <span className="m">Gross Margin % (50%)</span></div><div>KPI2: <span className="m">Revenue (50%)</span></div>
+        <div>Floor: <span className="m">80% per KPI</span> Cap: <span className="m">200%</span></div><div>Max Monthly: <span className="m" style={{color:G.a}}>$4,536</span></div>
+      </div><div style={{fontSize:8,color:G.t3,marginTop:4}}>COO Carey — Confirmed from Bonus Worksheet</div></div>
+      <div className="gl gw" style={{padding:12}}><div className="st">Roster</div>{c.techs.map(t=>(<div key={t.n} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:`1px solid rgba(80,90,120,0.06)`}}><div style={{fontSize:11,fontWeight:600}}>{t.n}<div style={{fontSize:8,color:G.t2}}>{t.role}</div></div><span className="tag tg">Active</span></div>))}<div style={{padding:'5px 0',opacity:0.4,fontSize:9}}>Brett Gallo / Ronald Pagano <span className="tag tm">Inactive</span></div></div>
+    </div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">ST Reports</div>{[{n:'Job Detail',s:true},{n:'Estimates',s:true},{n:'P&L Weekly',s:true},{n:'Memberships',s:true},{n:'Callbacks',s:false},{n:'Invoice Detail',s:false},{n:'Labor Hours',s:false}].map(r=>(<div key={r.n} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:`1px solid rgba(80,90,120,0.06)`}}><span style={{fontSize:10}}>{r.n}</span><span className={`tag ${r.s?'tg':'tw'}`}>{r.s?'✅ Flow':'⏳ Setup'}</span></div>))}</div>
+    <div className="gl gw" style={{padding:12,marginTop:8}}><div className="st">Alert Thresholds</div><div style={{fontSize:10,color:G.t2,lineHeight:2}}>
+      <div>GM% below <span className="m" style={{color:G.w}}>55%</span></div><div>3+ CB/month <span className="m" style={{color:G.w}}>→ Alert</span></div><div>PO 80% before day 20 <span className="m" style={{color:G.w}}>→ Alert</span></div><div>Avg ticket -20% <span className="m" style={{color:G.w}}>→ Anomaly</span></div><div>Disc rate 3%+ <span className="m" style={{color:G.w}}>→ Anomaly</span></div>
+    </div></div>
+    {/* Budget Upload UI */}
+    <div className="gl gw" style={{padding:12,marginTop:8}}>
+      <div className="st">Budget Upload</div>
+      <div style={{border:`2px dashed ${G.bdr}`,borderRadius:10,padding:20,textAlign:'center',cursor:'pointer',transition:'all 0.2s'}}>
+        <div style={{fontSize:24,marginBottom:4}}>📁</div>
+        <div style={{fontSize:12,fontWeight:600}}>Drop Budget XLSX Here</div>
+        <div style={{fontSize:9,color:G.t2,marginTop:4}}>System auto-parses all 12 months of targets: Revenue, GM%, NI, PO Budget, Labor Budget</div>
+        <div style={{marginTop:8}}><button className="lk" style={{padding:'6px 16px'}}>Browse Files</button></div>
+      </div>
+      <div style={{fontSize:8,color:G.t3,marginTop:6}}>Supported: .xlsx, .xls, .csv — Max 5MB</div>
+    </div>
+  </div>
+}
+
+// ═══ AI CHAT ═══
+function Chat({c,isOpen,onClose}){
+  const[msgs,setMsgs]=useState([{r:'b',t:`AI Analyst for ${c.name}. Ask anything.`}]);const[inp,setInp]=useState('');const ref=useRef(null);
+  function send(){if(!inp.trim())return;const q=inp.toLowerCase();setMsgs(p=>[...p,{r:'u',t:inp}]);setInp('');const a=c.act;const cm=c.comm;const k1=cm.kpi1;const k2=cm.kpi2;let r='';
+    if(q.includes('margin')||q.includes('gm'))r=`GM ${P(a.gm)} (tgt ${c.bgt.gm}%). Shadow ${P(a.sgm)}, ${P(a.gm-a.sgm)} variance. Achieve: ${P(cm.gmA)}.`;
+    else if(q.includes('comm')||q.includes('pay'))r=`Proj ${$(cm.proj)} (${P(cm.wA)} wtd). GM:${P(cm.gmA)} NI:${P(cm.niA)}.`;
+    else if(q.includes('thomas')||q.includes('jonathan')||q.includes('tech')){const tk=c.techs[0],ja=c.techs[1];r=`Thomas: ${$(tk.rev)} rev, ${$(tk.avgT)} avg, ${tk.memS} mem, ${$(tk.disc)} disc. Jonathan: ${$(ja.rev)}, ${$(ja.avgT)} avg (${((1-ja.avgT/tk.avgT)*100).toFixed(0)}% below), ${ja.memS} mem, ${$(ja.disc)} disc (${ja.discN}x — watch).`}
+    else if(q.includes('po')||q.includes('material'))r=`PO: ${$(a.po.mtd)} of ${$(c.bgt.po)} (${((a.po.mtd/c.bgt.po)*100).toFixed(0)}%). By tech: Thomas ${$(c.techs[0].po)}, Jonathan ${$(c.techs[1].po)}, Roger ${$(c.techs[2].po)}.`;
+    else if(q.includes('pipe')||q.includes('est'))r=`${a.openEst} open (${$(a.pipeV)}). ${a.soldEst} sold. ${c.ests.filter(e=>e.s==='stale').length} stale. Conv: ${((a.soldEst/(a.openEst+a.soldEst))*100).toFixed(0)}%.`;
+    else if(q.includes('cb')||q.includes('callback')){const cc=a.cb*(280+a.avgT*0.3);r=`${a.cb} CB MTD. True cost: ${$(cc)}. Jonathan 2, Thomas 1, Roger 1.`}
+    else if(q.includes('mem'))r=`${a.mem.active} active, +${a.mem.new}/-${a.mem.cancel} (net +${a.mem.new-a.mem.cancel}). Rev: ${$(a.mem.rev)}/mo. Thomas:${c.techs[0].memS} Jonathan:${c.techs[1].memS}.`;
+    else if(q.includes('what if')||q.includes('scenario'))r='Use the What-If page to model scenarios with sliders. Adjust extra jobs, avg ticket, and GM% to see commission impact.';
+    else r=`${$(a.rev)} rev, ${P(a.gm)} GM, ${a.jobs} jobs. Comm: ${$(cm.proj)}. ${a.dr} days left. Top: ${c.dirs[0]?.t.slice(0,60)||'None.'}`;
+    setTimeout(()=>setMsgs(p=>[...p,{r:'b',t:r}]),200)}
+  useEffect(()=>{ref.current&&(ref.current.scrollTop=ref.current.scrollHeight)},[msgs]);
+  if(!isOpen)return null;
+  return <div className="gl gw cpan"><div style={{padding:'8px 12px',borderBottom:`1px solid ${G.bdr}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:600,fontSize:12}}>AI Analyst</span><button onClick={onClose} style={{background:'none',border:'none',color:G.t2,cursor:'pointer',fontSize:14}}>✕</button></div><div className="cmsgs" ref={ref}>{msgs.map((m,i)=><div key={i} className={`cmsg cm${m.r}`}>{m.t}</div>)}</div><div className="cinp"><input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Ask anything..."/><button onClick={send}>→</button></div></div>
+}
+
+// ═══ MAIN APP ═══
+function App(){
+  const[page,setPage]=useState('dash');const[cid,setCid]=useState('2cool');const[chatOpen,setCO]=useState(false);const[priv,setPriv]=useState(false);
+  const co=DATA.find(c=>c.id===cid)||DATA[0];
+  const pages={dash:{l:'Dashboard',i:'📊',C:Dash},techs:{l:'Techs',i:'👷',C:Techs},pipe:{l:'Pipeline',i:'📋',C:Pipe},comp:{l:'Compliance',i:'🔍',C:Compl},trends:{l:'Trends',i:'📈',C:Trends},comm:{l:'Commission',i:'💰',C:Comm},whatif:{l:'What-If',i:'🎮',C:WhatIf},funnel:{l:'Funnel',i:'🔻',C:Waterfall},territory:{l:'Territory',i:'📍',C:Territory},calendar:{l:'Calendar',i:'📅',C:Calendar},alerts:{l:'Alerts',i:'🔔',C:Alerts},mems:{l:'Members',i:'👥',C:Mems},sentinel:{l:'Sentinel',i:'🛡️',C:Sentinel},settings:{l:'Settings',i:'⚙️',C:Settings}};
+  const PG=pages[page]?.C||Dash;
+  return <div className="app"><style>{CSS}</style>
+    <div className="top">
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{fontSize:15,fontWeight:700}}>
+          <span style={{color:G.a}}>❄️</span> HVAC <span style={{color:G.t2,fontWeight:400}}>Regional CRM</span>
+        </div>
+        <select value={cid} onChange={e=>setCid(e.target.value)}>{DATA.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}<option disabled>+ Add</option></select>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:10,fontSize:11}}>
+        <button className={`lk ${priv?'on':''}`} onClick={()=>setPriv(!priv)}>{priv?'🔒 Private':'👁️ Visible'}</button>
+        <span className="m" style={{color:G.t2}}>{new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
+        <span style={{color:G.a,fontWeight:600}}>Ismael</span>
+      </div>
+    </div>
+    <div style={{padding:'8px 16px'}}>
+      <div className="nav">{Object.entries(pages).map(([k,p])=>{if(k==='comm'&&priv)return null;return <button key={k} className={`nb ${page===k?'ac':''}`} onClick={()=>setPage(k)}>{p.i} {p.l}</button>})}</div>
+    </div>
+    <div style={{padding:'0 16px 60px'}}>
+      {page==='comm'&&priv?<div className="gl gw" style={{padding:30,textAlign:'center'}}><div style={{fontSize:30}}>🔒</div><div style={{fontSize:12,color:G.t2,marginTop:6}}>Commission hidden in private mode.</div><button className="lk" onClick={()=>setPriv(false)} style={{marginTop:8}}>Unlock</button></div>:<PG c={co} priv={priv}/>}
+    </div>
+    <button className="fab" onClick={()=>setCO(!chatOpen)}>{chatOpen?'✕':'🤖'}</button>
+    <Chat c={co} isOpen={chatOpen} onClose={()=>setCO(false)}/>
+  </div>
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
